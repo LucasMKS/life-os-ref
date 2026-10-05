@@ -14,7 +14,7 @@ import java.util.List;
 public interface BookNoteRepository extends JpaRepository<BookNote, String> {
 
     @Query("""
-            SELECT new com.lifeos.reading.dto.RecentNoteDTO(n.id, n.note, n.createdAt, b.id, b.title, b.coverUrl)
+            SELECT new com.lifeos.modules.reading.dto.RecentNoteDTO(n.id, n.note, n.createdAt, b.id, b.title, b.coverUrl)
             FROM BookNote n JOIN n.book b
             WHERE n.userId = :userId
             ORDER BY n.createdAt DESC
