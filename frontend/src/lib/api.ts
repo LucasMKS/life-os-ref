@@ -42,9 +42,14 @@ const requestInterceptor = (config: any) => {
   return config;
 };
 
+const externalRatingInterceptor = (config: any) => {
+  const { token } = useAuthStore.getState();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+};
+
 api.interceptors.request.use(requestInterceptor);
-authApi.interceptors.request.use(requestInterceptor);
-ratingApi.interceptors.request.use(requestInterceptor);
+ratingApi.interceptors.request.use(externalRatingInterceptor);
 
 const responseErrorInterceptor = (error: any) => {
   if (error.response?.status === 401 || error.response?.status === 403) {
