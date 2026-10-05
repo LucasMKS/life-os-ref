@@ -22,7 +22,7 @@ export default function Home() {
         <div className="absolute bottom-[20%] left-[10%] w-[300px] h-[300px] bg-emerald-600/5 rounded-full blur-[100px]" />
         
         {/* Fine grid pattern overlay */}
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(#ffffff0a_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none" />
       </div>
 
       <Navbar />

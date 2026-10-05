@@ -85,7 +85,8 @@ export function NotificationPanel({ isOpen, onClose }: NotificationPanelProps) {
 
     const setupSSE = () => {
       // EventSource não suporta headers customizados, por isso passamos via query parameter
-      const streamUrl = new URL(notificationApi.getStreamUrl());
+      const baseOrigin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+      const streamUrl = new URL(notificationApi.getStreamUrl(), baseOrigin);
       if (token) streamUrl.searchParams.set("token", token);
       if (userId) streamUrl.searchParams.set("userId", userId);
 
