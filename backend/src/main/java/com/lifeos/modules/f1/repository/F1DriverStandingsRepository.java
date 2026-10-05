@@ -1,0 +1,21 @@
+package com.lifeos.modules.f1.repository;
+
+import com.lifeos.modules.f1.model.F1DriverStandings;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+
+@Repository
+public interface F1DriverStandingsRepository extends JpaRepository<F1DriverStandings, String> {
+    List<F1DriverStandings> findBySeasonOrderByPositionAsc(int season);
+
+    @Transactional
+    @Modifying
+    @Query("delete from F1DriverStandings s where s.season = :season")
+    void deleteBySeasonInBatch(@Param("season") int season);
+}

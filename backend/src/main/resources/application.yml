@@ -1,0 +1,114 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: life-os-backend
+
+  datasource:
+    url: ${POSTGRES_URI:jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:lifeos_db}}
+    username: ${POSTGRES_USER:lifeos}
+    password: ${POSTGRES_PASSWORD:lifeos_password}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    defer-datasource-initialization: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/init-schemas.sql
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 3s
+
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+
+jwt:
+  secret: ${JWT_SECRET:dHJvcXVlX3Bvcl91bV9zZWdyZWRvX2p3dF9iYXNlNjRfb3Vfc3RyaW5nX2xvbmdhX2Vfc2VndXJh}
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000,https://lifeos.lucasmks.com.br}
+
+telegram:
+  bot:
+    token: ${TELEGRAM_BOT_TOKEN:}
+    chat-id: ${TELEGRAM_CHAT_ID:}
+
+app:
+  site-url: ${SITE_URL:http://localhost:5173}
+  bot-user-id: ${BOT_USER_ID:}
+  lmsfavorite-url: ${LMSFAVORITE_URL:http://lmsfavorite:8083}
+  lmsrating-url: ${LMSRATING_URL:http://lmsrating:8082}
+
+  api-keys:
+    steam: ${STEAM_API_KEY:}
+    twitch:
+      client-id: ${TWITCH_CLIENT_ID:}
+      client-secret: ${TWITCH_CLIENT_SECRET:}
+    tmdb: ${TMDB_API_KEY:}
+    openweathermap: ${OPENWEATHERMAP_API_KEY:}
+    google-books: ${GOOGLE_BOOKS_API_KEY:}
+    api-football: ${API_FOOTBALL_KEY:}
+    pandascore: ${PANDASCORE_API_KEY:}
+
+  schedulers:
+    f1-upcoming:
+      fixed-delay-ms: ${APP_SCHEDULERS_F1_UPCOMING_FIXED_DELAY_MS:60000}
+      initial-delay-ms: ${APP_SCHEDULERS_F1_UPCOMING_INITIAL_DELAY_MS:45000}
+      lookahead-minutes: ${APP_SCHEDULERS_F1_UPCOMING_LOOKAHEAD_MINUTES:15}
+    f1-daily-briefing:
+      cron: ${APP_SCHEDULERS_F1_DAILY_BRIEFING_CRON:0 0 8 * * *}
+    reading-nudge:
+      cron: ${APP_SCHEDULERS_READING_NUDGE_CRON:0 30 18 * * *}
+      inactive-days: ${APP_SCHEDULERS_READING_NUDGE_INACTIVE_DAYS:3}
+    finance-upcoming:
+      cron: ${APP_SCHEDULERS_FINANCE_UPCOMING_CRON:0 0 9 * * *}
+    finance-monthly-balance:
+      cron: ${APP_SCHEDULERS_FINANCE_MONTHLY_BALANCE_CRON:0 0 10 1 * *}
+    gaming-updates:
+      cron: ${APP_SCHEDULERS_GAMING_UPDATES_CRON:0 0 0/4 * * *}
+      lookback-hours: ${APP_SCHEDULERS_GAMING_UPDATES_LOOKBACK_HOURS:4}
+    twitch-live-check:
+      fixed-delay-ms: ${APP_SCHEDULERS_TWITCH_LIVE_CHECK_FIXED_DELAY_MS:300000}
+      initial-delay-ms: ${APP_SCHEDULERS_TWITCH_LIVE_CHECK_INITIAL_DELAY_MS:60000}
+    gaming-news-sync:
+      fixed-delay-ms: ${APP_SCHEDULERS_GAMING_NEWS_SYNC_FIXED_DELAY_MS:21600000}
+      initial-delay-ms: ${APP_SCHEDULERS_GAMING_NEWS_SYNC_INITIAL_DELAY_MS:120000}
+    morning-weather:
+      cron: ${APP_SCHEDULERS_MORNING_WEATHER_CRON:0 0 7 * * MON-FRI}
+      zone: ${APP_SCHEDULERS_MORNING_WEATHER_ZONE:America/Sao_Paulo}
+    sports-updates:
+      cron: ${APP_SCHEDULERS_SPORTS_UPDATES_CRON:0 0 1 * * *}
+    sports-upcoming:
+      fixed-delay-ms: ${APP_SCHEDULERS_SPORTS_UPCOMING_FIXED_DELAY_MS:60000}
+      lookahead-minutes: ${APP_SCHEDULERS_SPORTS_UPCOMING_LOOKAHEAD_MINUTES:15}
+
+logging:
+  level:
+    root: INFO
+    com.lifeos: INFO
+    org.hibernate.SQL: WARN
+    org.springframework.web: INFO
