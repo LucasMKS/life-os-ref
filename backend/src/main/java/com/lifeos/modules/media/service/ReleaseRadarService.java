@@ -205,7 +205,10 @@ public class ReleaseRadarService {
                     }
                 });
 
-        return mono.onErrorResume(e -> { log.error("Fallback para fetchWatchlistIds ({}): {}", path, e.getMessage()); return Mono.error(e); });
+        return mono.onErrorResume(e -> { 
+            log.warn("Aviso ao buscar watchlist ids ({}): {}", path, e.getMessage()); 
+            return Mono.just(List.of()); 
+        });
     }
 
     private Mono<Map<String, String>> fetchWatchlistSeriesWithStatus(String authHeader) {
@@ -232,7 +235,10 @@ public class ReleaseRadarService {
                     }
                 });
 
-        return mono.onErrorResume(e -> { log.error("Fallback para fetchWatchlistSeriesWithStatus: {}", e.getMessage()); return Mono.error(e); });
+        return mono.onErrorResume(e -> { 
+            log.warn("Aviso ao buscar watchlist series: {}", e.getMessage()); 
+            return Mono.just(java.util.Map.of()); 
+        });
     }
 
     public List<WeeklyCalendarDayDTO> getWeeklyCalendar(String userId, String authHeader) {
