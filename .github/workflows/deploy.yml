@@ -1,0 +1,103 @@
+name: CI/CD LifeOS Ref (Docker Hub + Hostinger)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  # ==========================================
+  # CONSTRUIR E ENVIAR PARA O DOCKER HUB
+  # ==========================================
+  build-and-push:
+    name: Build & Push Imagens Docker
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # DETECTAR ALTERAÇÕES
+      - name: Detectar pastas alteradas
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+            backend:
+              - 'backend/**'
+
+      - name: Login no Docker Hub
+        if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # FRONTEND
+      - name: Build & Push Frontend
+        if: steps.filter.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/life-os-ref:frontend
+
+      # BACKEND
+      - name: Build & Push Backend
+        if: steps.filter.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/life-os-ref:backend
+
+  # ==========================================
+  # ATUALIZAR O SERVIDOR (HOSTINGER)
+  # ==========================================
+  deploy:
+    name: Deploy na Hostinger
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: needs.build-and-push.outputs.frontend == 'true' || needs.build-and-push.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Executar comandos no servidor via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 10m
+          script: |
+            if [ -d "/root/lifeos-ref" ]; then
+              cd /root/lifeos-ref
+            elif [ -d "/root/life-os-ref" ]; then
+              cd /root/life-os-ref
+            elif [ -d "/root/lifeos-lms" ]; then
+              cd /root/lifeos-lms
+            else
+              echo "Diretório do projeto não encontrado no servidor!"
+              exit 1
+            fi
+
+            echo "Diretório de execução: $(pwd)"
+
+            echo "Baixando as novas imagens do Docker Hub..."
+            docker compose pull backend || true
+            docker compose pull frontend || true
+
+            echo "Reiniciando os containers..."
+            docker compose up -d
+
+            echo "Limpando imagens antigas sem uso..."
+            docker image prune -f
+
+            echo "Deploy concluído com sucesso no LifeOS!"

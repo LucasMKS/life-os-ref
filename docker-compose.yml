@@ -50,6 +50,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: lucasmks/life-os-ref:backend
     container_name: lifeos-backend
     networks:
       - lifeos-network
@@ -98,6 +99,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    image: lucasmks/life-os-ref:frontend
     container_name: lifeos-frontend
     networks:
       - lifeos-network
