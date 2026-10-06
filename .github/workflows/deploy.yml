@@ -68,8 +68,14 @@ jobs:
     if: needs.build-and-push.outputs.frontend == 'true' || needs.build-and-push.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
 
     steps:
+      - name: Validar Secrets de SSH
+        run: |
+          if [ -z "${{ secrets.DROPLET_IP }}" ]; then echo "ERRO: DROPLET_IP não está configurado nas Secrets do repositório!"; exit 1; fi
+          if [ -z "${{ secrets.DROPLET_USER }}" ]; then echo "ERRO: DROPLET_USER não está configurado nas Secrets do repositório!"; exit 1; fi
+          if [ -z "${{ secrets.DROPLET_SSH_KEY }}" ]; then echo "ERRO: DROPLET_SSH_KEY não está configurado nas Secrets do repositório!"; exit 1; fi
+
       - name: Executar comandos no servidor via SSH
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DROPLET_IP }}
           username: ${{ secrets.DROPLET_USER }}
