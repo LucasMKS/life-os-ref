@@ -153,10 +153,7 @@ public class SportsNotificationScheduler {
     /**
      * DAILY MORNING BRIEFING: Runs every morning at 08:00 AM (America/Sao_Paulo).
      */
-    @Scheduled(
-            cron = "${app.schedulers.sports-daily-briefing.cron:0 0 8 * * *}",
-            zone = "${app.schedulers.sports-daily-briefing.zone:America/Sao_Paulo}"
-    )
+    // Disparado dinamicamente pelo DynamicNotificationScheduler de acordo com o horário do usuário
     @SchedulerLock(name = "sports-dailyBriefing", lockAtMostFor = "PT15M", lockAtLeastFor = "PT5M")
     public void sendDailyBriefing() {
         if (!runningDailyBriefing.compareAndSet(false, true)) {

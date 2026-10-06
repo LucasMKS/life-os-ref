@@ -45,7 +45,7 @@ public class ReadingNotificationScheduler {
      * NUDGE DE LEITURA: Roda todos os dias às 18:30.
      * Verifica livros que não são lidos há mais de 3 dias.
      */
-    @Scheduled(cron = "${app.schedulers.reading-nudge.cron:0 30 18 * * *}")
+    // Disparado dinamicamente pelo DynamicNotificationScheduler de acordo com o horário do usuário
     @SchedulerLock(name = "reading-notifyReadingSlump", lockAtMostFor = "PT15M", lockAtLeastFor = "PT5M")
     public void notifyReadingSlump() {
         if (!runningReadingNudge.compareAndSet(false, true)) {

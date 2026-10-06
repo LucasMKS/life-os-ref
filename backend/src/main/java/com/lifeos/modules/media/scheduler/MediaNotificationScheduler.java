@@ -24,10 +24,7 @@ public class MediaNotificationScheduler {
      * Varredura diária de lançamentos do radar de mídia (filmes e séries da watchlist).
      * Executa diariamente às 09:00 (horário de Brasília).
      */
-    @Scheduled(
-            cron = "${app.schedulers.media-radar.cron:0 0 9 * * *}",
-            zone = "${app.schedulers.media-radar.zone:America/Sao_Paulo}"
-    )
+    // Disparado dinamicamente pelo DynamicNotificationScheduler de acordo com o horário do usuário
     @SchedulerLock(name = "mediaDailyRadar", lockAtMostFor = "PT30M", lockAtLeastFor = "PT5M")
     public void notifyDailyMediaReleases() {
         if (!runningMediaRadar.compareAndSet(false, true)) {

@@ -48,7 +48,7 @@ public class FinanceNotificationScheduler {
      * LEMBRETE DE VÉSPERA: Roda todos os dias às 09:00 da manhã.
      * Verifica se alguma assinatura vence exatamante no dia seguinte.
      */
-    @Scheduled(cron = "${app.schedulers.finance-upcoming.cron:0 0 9 * * *}")
+    // Disparado dinamicamente pelo DynamicNotificationScheduler de acordo com o horário do usuário
     @SchedulerLock(name = "finance-notifyUpcomingPayments", lockAtMostFor = "PT15M", lockAtLeastFor = "PT5M")
     public void notifyUpcomingPayments() {
         if (!runningUpcomingPayments.compareAndSet(false, true)) {

@@ -32,10 +32,7 @@ public class RoutineWeatherService {
 
     private final List<String> targetCities = Arrays.asList("Contagem,BR");
 
-    @Scheduled(
-            cron = "${app.schedulers.morning-weather.cron:0 0 7 * * MON-FRI}",
-            zone = "${app.schedulers.morning-weather.zone:America/Sao_Paulo}"
-    )
+    // Disparado dinamicamente pelo DynamicNotificationScheduler de acordo com o horário do usuário
     @SchedulerLock(name = "weather-morningRoutine", lockAtMostFor = "PT15M", lockAtLeastFor = "PT5M")
     public void checkMorningRoutineWeather() {
         if (!runningMorningWeather.compareAndSet(false, true)) {

@@ -76,7 +76,7 @@ public class F1NotificationScheduler {
         }
     }
 
-    @Scheduled(cron = "${app.schedulers.f1-daily-briefing.cron:0 0 8 * * *}")
+    // Disparado dinamicamente pelo DynamicNotificationScheduler de acordo com o horário do usuário
     @SchedulerLock(name = "f1-dailyNewsBriefing", lockAtMostFor = "PT15M", lockAtLeastFor = "PT5M")
     public void sendDailyNewsBriefing() {
         if (!runningDailyBriefing.compareAndSet(false, true)) {

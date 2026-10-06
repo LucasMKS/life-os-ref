@@ -15,7 +15,6 @@ import {
   Trophy,
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { NotificationPanel } from "./notification-panel";
 import { useQuery } from "@tanstack/react-query";
 import { notificationApi } from "@/lib/api";
 import { AppNotification } from "@/lib/types";
@@ -88,7 +87,6 @@ const navLinks = [
 
 export function Navbar() {
   const pathname = usePathname();
-  const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
   const { data: notifications = [] } = useQuery<AppNotification[]>({
@@ -115,9 +113,8 @@ export function Navbar() {
             OS
           </span>
         </Link>
-        <button
-          type="button"
-          onClick={() => setIsNotificationPanelOpen(true)}
+        <Link
+          href="/notifications"
           className="relative p-2.5 -m-1 text-zinc-300 hover:text-white"
           aria-label="Notificações"
         >
@@ -125,7 +122,7 @@ export function Navbar() {
           {unreadCount > 0 && (
             <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-[#09090b]" />
           )}
-        </button>
+        </Link>
       </div>
 
       {/* Top bar desktop (a nav original) */}
@@ -184,9 +181,10 @@ export function Navbar() {
           </div>
 
           <div className="flex items-center gap-5">
-            <button
-              onClick={() => setIsNotificationPanelOpen(true)}
+            <Link
+              href="/notifications"
               className="relative p-2.5 text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-2xl transition-all border border-white/5 shadow-inner group"
+              aria-label="Notificações"
             >
               <Bell
                 size={20}
@@ -195,17 +193,12 @@ export function Navbar() {
               {unreadCount > 0 && (
                 <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-[#09090b] shadow-[0_0_10px_rgba(59,130,246,0.5)] animate-pulse" />
               )}
-            </button>
+            </Link>
 
             <AuthButton />
           </div>
         </div>
       </nav>
-
-      <NotificationPanel
-        isOpen={isNotificationPanelOpen}
-        onClose={() => setIsNotificationPanelOpen(false)}
-      />
     </>
   );
 }

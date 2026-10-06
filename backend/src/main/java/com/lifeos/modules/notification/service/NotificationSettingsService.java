@@ -18,6 +18,7 @@ public class NotificationSettingsService {
 
     private final UserNotificationSettingsRepository settingsRepository;
     private final TelegramService telegramService;
+    private final org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
 
     private static final ZoneId BRT = ZoneId.of("America/Sao_Paulo");
 
@@ -64,8 +65,25 @@ public class NotificationSettingsService {
         if (dto.getQuietHoursStart() != null && !dto.getQuietHoursStart().isBlank()) settings.setQuietHoursStart(dto.getQuietHoursStart().trim());
         if (dto.getQuietHoursEnd() != null && !dto.getQuietHoursEnd().isBlank()) settings.setQuietHoursEnd(dto.getQuietHoursEnd().trim());
 
+        clearDispatchLocks(userId);
         settings.setUserId(userId);
         return settingsRepository.save(settings);
+    }
+
+    private void clearDispatchLocks(String userId) {
+        try {
+            if (redisTemplate != null) {
+                java.time.LocalDate today = java.time.LocalDate.now(BRT);
+                String pattern = "dyn_dispatch:*:" + userId + ":" + today;
+                java.util.Set<String> keys = redisTemplate.keys(pattern);
+                if (keys != null && !keys.isEmpty()) {
+                    redisTemplate.delete(keys);
+                    log.info("Chaves de despacho resetadas para usuário {} para permitir novos testes imediatos.", userId);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Não foi possível limpar travas de despacho no Redis para usuário {}: {}", userId, e.getMessage());
+        }
     }
 
     public boolean testTelegram(String userId, String chatId) {
