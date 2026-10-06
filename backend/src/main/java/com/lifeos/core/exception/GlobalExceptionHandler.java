@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
@@ -47,14 +48,32 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(ErrorResponse.of(422, ex.getMessage()));
     }
 
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException ex) {
+        log.debug("Conexão cancelada pelo cliente durante requisição assíncrona/SSE: {}", ex.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex) {
-        if (ex.getClass().getName().contains("ClientAbortException")) {
-            log.warn("Client aborted request prematurely (Broken pipe).");
+        if (isClientAbort(ex)) {
+            log.debug("Cliente abortou a conexão prematuramente (Broken pipe / Connection reset).");
             return null;
         }
         log.error("Unexpected server error: {}", ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ErrorResponse.of(500, "Erro interno do servidor"));
+    }
+
+    private boolean isClientAbort(Throwable t) {
+        if (t == null) return false;
+        String name = t.getClass().getName();
+        String msg = t.getMessage() != null ? t.getMessage().toLowerCase() : "";
+        if (name.contains("ClientAbortException") || name.contains("AsyncRequestNotUsableException")) {
+            return true;
+        }
+        if (msg.contains("broken pipe") || msg.contains("connection reset") || msg.contains("connection abort")) {
+            return true;
+        }
+        return isClientAbort(t.getCause());
     }
 }
