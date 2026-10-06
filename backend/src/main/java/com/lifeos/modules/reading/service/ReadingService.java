@@ -248,6 +248,7 @@ public class ReadingService {
         return repository.save(book);
     }
 
+    @Transactional(readOnly = true)
     public List<Book> getUserLibrary(String userId) {
         return repository.findAllByUserIdOrderByStartedAtDesc(userId);
     }
@@ -555,6 +556,7 @@ public class ReadingService {
         }).orElseThrow(() -> new NoSuchElementException("Livro não encontrado: " + bookId));
     }
 
+    @Transactional(readOnly = true)
     public Book getBookDetails(String userId, String bookId) {
         return repository.findById(bookId).map(book -> {
             if (userId != null && !userId.equals(book.getUserId())) {

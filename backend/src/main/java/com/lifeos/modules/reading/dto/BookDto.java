@@ -1,8 +1,10 @@
 package com.lifeos.modules.reading.dto;
 
 import com.lifeos.modules.reading.model.Book;
+import org.hibernate.Hibernate;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 public record BookDto(
@@ -26,10 +28,16 @@ public record BookDto(
         LocalDateTime updatedAt
 ) {
     public static BookDto from(Book b) {
-        List<ReadingSessionDto> sessions = b.getSessions() == null ? List.of()
-                : b.getSessions().stream().map(ReadingSessionDto::from).toList();
-        List<BookNoteDto> notes = b.getNotes() == null ? List.of()
-                : b.getNotes().stream().map(BookNoteDto::from).toList();
+        List<ReadingSessionDto> sessions = (b.getSessions() != null && Hibernate.isInitialized(b.getSessions()))
+                ? b.getSessions().stream().map(ReadingSessionDto::from).toList()
+                : List.of();
+        List<BookNoteDto> notes = (b.getNotes() != null && Hibernate.isInitialized(b.getNotes()))
+                ? b.getNotes().stream().map(BookNoteDto::from).toList()
+                : List.of();
+        List<String> genres = (b.getGenres() != null && Hibernate.isInitialized(b.getGenres()))
+                ? new ArrayList<>(b.getGenres())
+                : List.of();
+
         return new BookDto(
                 b.getId(),
                 b.getTitle(),
@@ -40,7 +48,7 @@ public record BookDto(
                 b.getTotalPages(),
                 b.getReadPages(),
                 b.getStatus(),
-                b.getGenres() == null ? List.of() : b.getGenres(),
+                genres,
                 sessions,
                 notes,
                 b.getStartedAt(),
@@ -56,6 +64,10 @@ public record BookDto(
      * Versão compacta sem coleções pesadas (para listagens da biblioteca).
      */
     public static BookDto summaryFrom(Book b) {
+        List<String> genres = (b.getGenres() != null && Hibernate.isInitialized(b.getGenres()))
+                ? new ArrayList<>(b.getGenres())
+                : List.of();
+
         return new BookDto(
                 b.getId(),
                 b.getTitle(),
@@ -66,7 +78,7 @@ public record BookDto(
                 b.getTotalPages(),
                 b.getReadPages(),
                 b.getStatus(),
-                b.getGenres() == null ? List.of() : b.getGenres(),
+                genres,
                 List.of(),
                 List.of(),
                 b.getStartedAt(),

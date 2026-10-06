@@ -39,7 +39,7 @@ public class Book {
     private int readPages;
     private String status;
     
-    @ElementCollection
+    @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "book_genres", joinColumns = @JoinColumn(name = "book_id"))
     @Column(name = "genre")
     private List<String> genres;

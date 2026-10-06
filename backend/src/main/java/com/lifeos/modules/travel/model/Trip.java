@@ -62,7 +62,7 @@ public class Trip {
     @Column(name = "user_id", nullable = false)
     private String userId;
 
-    @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @OrderBy("dateTime ASC")
     private List<ItineraryItem> itinerary = new ArrayList<>();
 }
