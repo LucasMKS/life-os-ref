@@ -56,8 +56,10 @@ export function EpisodeWatchlist() {
     setExpandedShowId(null);
   };
 
+  const queryKey = ["media-episodes-to-watch", userId];
+
   const { data: shows = [], isLoading } = useQuery<SerieWatchStatusDTO[]>({
-    queryKey: ["media-episodes-to-watch", userId],
+    queryKey,
     queryFn: radarApi.getEpisodesToWatch,
     staleTime: 0,
   });
@@ -94,9 +96,9 @@ export function EpisodeWatchlist() {
       episodeNumber: number;
     }) => radarApi.watchEpisode(serieId, seasonNumber, episodeNumber),
     onMutate: async (variables) => {
-      await queryClient.cancelQueries({ queryKey: ["media-episodes-to-watch"] });
-      const previousShows = queryClient.getQueryData<SerieWatchStatusDTO[]>(["media-episodes-to-watch"]);
-      queryClient.setQueryData<SerieWatchStatusDTO[]>(["media-episodes-to-watch"], (old) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previousShows = queryClient.getQueryData<SerieWatchStatusDTO[]>(queryKey);
+      queryClient.setQueryData<SerieWatchStatusDTO[]>(queryKey, (old) => {
         if (!old) return [];
         return old.map((show) => {
           if (show.tmdbId !== variables.serieId) return show;
@@ -115,7 +117,7 @@ export function EpisodeWatchlist() {
     },
     onError: (err, variables, context) => {
       if (context?.previousShows) {
-        queryClient.setQueryData(["media-episodes-to-watch"], context.previousShows);
+        queryClient.setQueryData(queryKey, context.previousShows);
       }
       toast.error("Erro ao marcar episódio como assistido.");
     },
@@ -139,9 +141,9 @@ export function EpisodeWatchlist() {
       episodeNumber: number;
     }) => radarApi.unwatchEpisode(serieId, seasonNumber, episodeNumber),
     onMutate: async (variables) => {
-      await queryClient.cancelQueries({ queryKey: ["media-episodes-to-watch"] });
-      const previousShows = queryClient.getQueryData<SerieWatchStatusDTO[]>(["media-episodes-to-watch"]);
-      queryClient.setQueryData<SerieWatchStatusDTO[]>(["media-episodes-to-watch"], (old) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previousShows = queryClient.getQueryData<SerieWatchStatusDTO[]>(queryKey);
+      queryClient.setQueryData<SerieWatchStatusDTO[]>(queryKey, (old) => {
         if (!old) return [];
         return old.map((show) => {
           if (show.tmdbId !== variables.serieId) return show;
@@ -160,7 +162,7 @@ export function EpisodeWatchlist() {
     },
     onError: (err, variables, context) => {
       if (context?.previousShows) {
-        queryClient.setQueryData(["media-episodes-to-watch"], context.previousShows);
+        queryClient.setQueryData(queryKey, context.previousShows);
       }
       toast.error("Erro ao desmarcar episódio.");
     },
@@ -184,9 +186,9 @@ export function EpisodeWatchlist() {
       episodeNumber: number;
     }) => radarApi.watchAllUpTo(serieId, seasonNumber, episodeNumber),
     onMutate: async (variables) => {
-      await queryClient.cancelQueries({ queryKey: ["media-episodes-to-watch"] });
-      const previousShows = queryClient.getQueryData<SerieWatchStatusDTO[]>(["media-episodes-to-watch"]);
-      queryClient.setQueryData<SerieWatchStatusDTO[]>(["media-episodes-to-watch"], (old) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previousShows = queryClient.getQueryData<SerieWatchStatusDTO[]>(queryKey);
+      queryClient.setQueryData<SerieWatchStatusDTO[]>(queryKey, (old) => {
         if (!old) return [];
         return old.map((show) => {
           if (show.tmdbId !== variables.serieId) return show;
@@ -208,7 +210,7 @@ export function EpisodeWatchlist() {
     },
     onError: (err, variables, context) => {
       if (context?.previousShows) {
-        queryClient.setQueryData(["media-episodes-to-watch"], context.previousShows);
+        queryClient.setQueryData(queryKey, context.previousShows);
       }
       toast.error("Erro ao marcar episódios.");
     },
@@ -230,9 +232,9 @@ export function EpisodeWatchlist() {
       watchLater: boolean;
     }) => radarApi.toggleWatchLater(serieId, watchLater),
     onMutate: async (variables) => {
-      await queryClient.cancelQueries({ queryKey: ["media-episodes-to-watch"] });
-      const previousShows = queryClient.getQueryData<SerieWatchStatusDTO[]>(["media-episodes-to-watch"]);
-      queryClient.setQueryData<SerieWatchStatusDTO[]>(["media-episodes-to-watch"], (old) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previousShows = queryClient.getQueryData<SerieWatchStatusDTO[]>(queryKey);
+      queryClient.setQueryData<SerieWatchStatusDTO[]>(queryKey, (old) => {
         if (!old) return [];
         return old.map((show) => {
           if (show.tmdbId !== variables.serieId) return show;
@@ -243,7 +245,7 @@ export function EpisodeWatchlist() {
     },
     onError: (err, variables, context) => {
       if (context?.previousShows) {
-        queryClient.setQueryData(["media-episodes-to-watch"], context.previousShows);
+        queryClient.setQueryData(queryKey, context.previousShows);
       }
       toast.error("Erro ao alterar preferência da série.");
     },
@@ -262,9 +264,9 @@ export function EpisodeWatchlist() {
   const startRewatchMutation = useMutation({
     mutationFn: ({ serieId }: { serieId: string }) => radarApi.startRewatch(serieId),
     onMutate: async (variables) => {
-      await queryClient.cancelQueries({ queryKey: ["media-episodes-to-watch"] });
-      const previousShows = queryClient.getQueryData<SerieWatchStatusDTO[]>(["media-episodes-to-watch"]);
-      queryClient.setQueryData<SerieWatchStatusDTO[]>(["media-episodes-to-watch"], (old) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previousShows = queryClient.getQueryData<SerieWatchStatusDTO[]>(queryKey);
+      queryClient.setQueryData<SerieWatchStatusDTO[]>(queryKey, (old) => {
         if (!old) return [];
         return old.map((show) => {
           if (show.tmdbId !== variables.serieId) return show;
@@ -281,7 +283,7 @@ export function EpisodeWatchlist() {
     },
     onError: (err, variables, context) => {
       if (context?.previousShows) {
-        queryClient.setQueryData(["media-episodes-to-watch"], context.previousShows);
+        queryClient.setQueryData(queryKey, context.previousShows);
       }
       toast.error("Erro ao iniciar rewatch da série.");
     },
@@ -297,9 +299,9 @@ export function EpisodeWatchlist() {
   const cancelRewatchMutation = useMutation({
     mutationFn: ({ serieId }: { serieId: string }) => radarApi.cancelRewatch(serieId),
     onMutate: async (variables) => {
-      await queryClient.cancelQueries({ queryKey: ["media-episodes-to-watch"] });
-      const previousShows = queryClient.getQueryData<SerieWatchStatusDTO[]>(["media-episodes-to-watch"]);
-      queryClient.setQueryData<SerieWatchStatusDTO[]>(["media-episodes-to-watch"], (old) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previousShows = queryClient.getQueryData<SerieWatchStatusDTO[]>(queryKey);
+      queryClient.setQueryData<SerieWatchStatusDTO[]>(queryKey, (old) => {
         if (!old) return [];
         return old.map((show) => {
           if (show.tmdbId !== variables.serieId) return show;
@@ -316,7 +318,7 @@ export function EpisodeWatchlist() {
     },
     onError: (err, variables, context) => {
       if (context?.previousShows) {
-        queryClient.setQueryData(["media-episodes-to-watch"], context.previousShows);
+        queryClient.setQueryData(queryKey, context.previousShows);
       }
       toast.error("Erro ao cancelar rewatch da série.");
     },

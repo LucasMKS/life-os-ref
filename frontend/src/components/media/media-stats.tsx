@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { radarApi } from "@/lib/api";
 import { watchlistMoviesApi } from "@/lib/media-api";
+import { useAuthStore } from "@/lib/authStore";
 import { SerieWatchStatusDTO, EpisodeDTO } from "@/lib/types";
 import {
   BarChart,
@@ -26,8 +27,9 @@ import {
 } from "recharts";
 
 export function MediaStats() {
+  const userId = useAuthStore((state) => state.userId);
   const { data: shows = [], isLoading: isLoadingSeries } = useQuery<SerieWatchStatusDTO[]>({
-    queryKey: ["media-episodes-to-watch"],
+    queryKey: ["media-episodes-to-watch", userId],
     queryFn: radarApi.getEpisodesToWatch,
     staleTime: 1000 * 60 * 5,
   });

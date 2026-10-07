@@ -241,6 +241,39 @@ public class ReleaseRadarService {
         });
     }
 
+    private Mono<List<WatchedEpisode>> fetchRemoteWatchedEpisodesForSerie(String serieId, String userId, String authHeader) {
+        if (authHeader == null || authHeader.isBlank()) {
+            return Mono.just(List.of());
+        }
+        return lmsFavoriteWebClient.get()
+                .uri("/watched/episodes/serie/" + serieId)
+                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .retrieve()
+                .bodyToMono(new ParameterizedTypeReference<List<Map<String, Object>>>() {})
+                .map(list -> {
+                    List<WatchedEpisode> result = new ArrayList<>();
+                    LocalDateTime now = LocalDateTime.now(SAO_PAULO_ZONE);
+                    for (Map<String, Object> map : list) {
+                        Integer season = map.get("seasonNumber") != null ? ((Number) map.get("seasonNumber")).intValue() : null;
+                        Integer ep = map.get("episodeNumber") != null ? ((Number) map.get("episodeNumber")).intValue() : null;
+                        if (season != null && ep != null) {
+                            result.add(WatchedEpisode.builder()
+                                    .userId(userId)
+                                    .serieId(serieId)
+                                    .seasonNumber(season)
+                                    .episodeNumber(ep)
+                                    .watchedAt(now)
+                                    .build());
+                        }
+                    }
+                    return result;
+                })
+                .onErrorResume(e -> {
+                    log.debug("Aviso ao buscar episódios da série {} no LMS Filmes: {}", serieId, e.getMessage());
+                    return Mono.just(List.of());
+                });
+    }
+
     public List<WeeklyCalendarDayDTO> getWeeklyCalendar(String userId, String authHeader) {
         List<ReleaseRadarDTO> all = getUpcomingReleases(userId, authHeader);
         LocalDate today = LocalDate.now(SAO_PAULO_ZONE);
@@ -727,82 +760,67 @@ public class ReleaseRadarService {
         }
 
         try {
-            Map<String, String> seriesWithStatus = fetchWatchlistSeriesWithStatus(authHeader).block();
-            if (seriesWithStatus == null || seriesWithStatus.isEmpty()) {
+            Map<String, String> fetchedSeriesStatus = fetchWatchlistSeriesWithStatus(authHeader).block();
+            Map<String, String> seriesWithStatus = new HashMap<>(fetchedSeriesStatus != null ? fetchedSeriesStatus : Map.of());
+
+            // Merge com mídias rastreadas no banco local (UserTrackedMedia) para garantir que séries concluídas e salvas no banco sejam consideradas
+            List<UserTrackedMedia> localTracked = userTrackedMediaRepository.findByUserId(userId);
+            for (UserTrackedMedia m : localTracked) {
+                if ("SERIES".equalsIgnoreCase(m.getMediaType()) && m.getTmdbId() != null) {
+                    String existing = seriesWithStatus.get(m.getTmdbId());
+                    if (existing == null) {
+                        seriesWithStatus.put(m.getTmdbId(), m.getStatus() != null ? m.getStatus() : "PLAN_TO_WATCH");
+                    } else if ("COMPLETED".equalsIgnoreCase(m.getStatus()) && !"COMPLETED".equalsIgnoreCase(existing)) {
+                        seriesWithStatus.put(m.getTmdbId(), "COMPLETED");
+                    }
+                }
+            }
+
+            if (seriesWithStatus.isEmpty()) {
                 return List.of();
+            }
+
+            // Atualiza status no banco local com base no status do LMS Filmes
+            for (UserTrackedMedia m : localTracked) {
+                if ("SERIES".equalsIgnoreCase(m.getMediaType()) && seriesWithStatus.containsKey(m.getTmdbId())) {
+                    String currentRemoteStatus = seriesWithStatus.get(m.getTmdbId());
+                    if (currentRemoteStatus != null && !currentRemoteStatus.equals(m.getStatus())) {
+                        m.setStatus(currentRemoteStatus);
+                        userTrackedMediaRepository.save(m);
+                    }
+                }
             }
 
             // Batch fetch watched episodes, preferences, and ratings
             List<WatchedEpisode> localWatched = watchedEpisodeRepository.findByUserIdAndSerieIdIn(userId, seriesWithStatus.keySet());
             List<WatchedEpisode> allWatched = new ArrayList<>(localWatched);
 
-            if (authHeader != null && !authHeader.isBlank()) {
+            // Se alguma série não possui episódios assistidos localmente e não está marcada como COMPLETED,
+            // tenta recuperar os episódios assistidos já salvos no LMS Filmes via /watched/episodes/serie/{serieId}
+            Set<String> seriesWithLocalEpisodes = localWatched.stream()
+                    .map(WatchedEpisode::getSerieId)
+                    .collect(Collectors.toSet());
+
+            List<String> needRemoteSync = seriesWithStatus.entrySet().stream()
+                    .filter(e -> !seriesWithLocalEpisodes.contains(e.getKey()) && !"COMPLETED".equalsIgnoreCase(e.getValue()))
+                    .map(Map.Entry::getKey)
+                    .toList();
+
+            if (!needRemoteSync.isEmpty() && authHeader != null && !authHeader.isBlank()) {
                 try {
-                    List<Map<String, Object>> remoteWatched = lmsFavoriteWebClient.get()
-                            .uri("/watched/episodes")
-                            .header(HttpHeaders.AUTHORIZATION, authHeader)
-                            .retrieve()
-                            .bodyToMono(new ParameterizedTypeReference<List<Map<String, Object>>>() {})
-                            .onErrorResume(e -> {
-                                log.warn("Erro ao buscar episódios assistidos do lms-favorite: {}", e.getMessage());
-                                return Mono.just(List.of());
-                            })
+                    List<WatchedEpisode> recoveredEpisodes = Flux.fromIterable(needRemoteSync)
+                            .flatMap(sId -> fetchRemoteWatchedEpisodesForSerie(sId, userId, authHeader), TMDB_PARALLEL_CALLS)
+                            .flatMapIterable(list -> list)
+                            .collectList()
                             .block();
 
-                    if (remoteWatched != null) {
-                        Set<String> remoteKeys = remoteWatched.stream()
-                                .map(r -> String.valueOf(r.get("serieId")) + ":" + r.get("seasonNumber") + ":" + r.get("episodeNumber"))
-                                .collect(java.util.stream.Collectors.toSet());
-
-                        Set<String> localKeys = localWatched.stream()
-                                .map(w -> w.getSerieId() + ":" + w.getSeasonNumber() + ":" + w.getEpisodeNumber())
-                                .collect(java.util.stream.Collectors.toSet());
-
-                        // 1. Episódios que estão no lms-favorite mas ainda não no LifeOS -> Adiciona no LifeOS
-                        List<WatchedEpisode> toSaveLocally = new ArrayList<>();
-                        for (Map<String, Object> r : remoteWatched) {
-                            String rSerieId = String.valueOf(r.get("serieId"));
-                            Integer rSeason = r.get("seasonNumber") != null ? ((Number) r.get("seasonNumber")).intValue() : null;
-                            Integer rEpisode = r.get("episodeNumber") != null ? ((Number) r.get("episodeNumber")).intValue() : null;
-
-                            if (rSerieId != null && rSeason != null && rEpisode != null) {
-                                String key = rSerieId + ":" + rSeason + ":" + rEpisode;
-                                if (!localKeys.contains(key)) {
-                                    WatchedEpisode we = WatchedEpisode.builder()
-                                            .userId(userId)
-                                            .serieId(rSerieId)
-                                            .seasonNumber(rSeason)
-                                            .episodeNumber(rEpisode)
-                                            .watchedAt(LocalDateTime.now(SAO_PAULO_ZONE))
-                                            .build();
-                                    toSaveLocally.add(we);
-                                    allWatched.add(we);
-                                }
-                            }
-                        }
-                        if (!toSaveLocally.isEmpty()) {
-                            watchedEpisodeRepository.saveAll(toSaveLocally);
-                            log.info("Sincronizados {} episódios do lms-favorite para o banco local do LifeOS", toSaveLocally.size());
-                        }
-
-                        // 2. Episódios que estão no LifeOS mas NÃO estão no lms-favorite -> Foram desmarcados no LMS Filmes!
-                        // Remove do banco local do LifeOS para refletir o estado real desmarcado.
-                        List<WatchedEpisode> toDeleteLocally = new ArrayList<>();
-                        for (WatchedEpisode local : localWatched) {
-                            String key = local.getSerieId() + ":" + local.getSeasonNumber() + ":" + local.getEpisodeNumber();
-                            if (!remoteKeys.contains(key)) {
-                                toDeleteLocally.add(local);
-                            }
-                        }
-
-                        if (!toDeleteLocally.isEmpty()) {
-                            watchedEpisodeRepository.deleteAll(toDeleteLocally);
-                            allWatched.removeAll(toDeleteLocally);
-                            log.info("Removidos {} episódios do LifeOS que foram desmarcados no LMS Filmes", toDeleteLocally.size());
-                        }
+                    if (recoveredEpisodes != null && !recoveredEpisodes.isEmpty()) {
+                        watchedEpisodeRepository.saveAll(recoveredEpisodes);
+                        allWatched.addAll(recoveredEpisodes);
+                        log.info("Recuperados {} episódios assistidos do LMS Filmes para o usuário {}", recoveredEpisodes.size(), userId);
                     }
                 } catch (Exception e) {
-                    log.error("Erro no sync de episódios assistidos com lms-favorite: {}", e.getMessage());
+                    log.warn("Aviso ao buscar episódios assistidos do LMS Filmes: {}", e.getMessage());
                 }
             }
 
@@ -979,16 +997,49 @@ public class ReleaseRadarService {
                                         }
                                     }
 
-                                     boolean rewatching = prefOpt.isPresent() && prefOpt.get().isRewatching();
-                                     boolean watchLater = prefOpt.isPresent() && prefOpt.get().isWatchLater();
-                                     int rewatchCount = prefOpt.isPresent() ? prefOpt.get().getRewatchCount() : 0;
+                                    boolean rewatching = prefOpt.isPresent() && prefOpt.get().isRewatching();
+                                    boolean watchLater = prefOpt.isPresent() && prefOpt.get().isWatchLater();
+                                    int rewatchCount = prefOpt.isPresent() ? prefOpt.get().getRewatchCount() : 0;
+                                    boolean isCompleted = "COMPLETED".equalsIgnoreCase(lmsStatus) || "WATCHED".equalsIgnoreCase(lmsStatus);
 
-                                    java.util.Map<String, WatchedEpisode> watchedMap = watchedList.stream()
-                                            .collect(java.util.stream.Collectors.toMap(
-                                                    we -> we.getSeasonNumber() + "-" + we.getEpisodeNumber(),
-                                                    we -> we,
-                                                    (a, b) -> a
-                                            ));
+                                    java.util.Map<String, WatchedEpisode> watchedMap = new java.util.HashMap<>(
+                                            watchedList.stream()
+                                                    .collect(java.util.stream.Collectors.toMap(
+                                                            we -> we.getSeasonNumber() + "-" + we.getEpisodeNumber(),
+                                                            we -> we,
+                                                            (a, b) -> a
+                                                    ))
+                                    );
+
+                                    // Se a série está concluída e não está em rewatch, garante que todos os episódios lançados
+                                    // fiquem marcados como assistidos tanto em memória quanto persistidos no banco local.
+                                    if (isCompleted && !rewatching && !airedEpisodes.isEmpty()) {
+                                        List<WatchedEpisode> toBackfill = new ArrayList<>();
+                                        LocalDateTime now = LocalDateTime.now(SAO_PAULO_ZONE);
+                                        for (EpisodeDTO ep : airedEpisodes) {
+                                            String key = ep.seasonNumber() + "-" + ep.episodeNumber();
+                                            if (!watchedMap.containsKey(key)) {
+                                                WatchedEpisode we = WatchedEpisode.builder()
+                                                        .userId(userId)
+                                                        .serieId(tmdbId)
+                                                        .seasonNumber(ep.seasonNumber())
+                                                        .episodeNumber(ep.episodeNumber())
+                                                        .watchedAt(now)
+                                                        .build();
+                                                watchedMap.put(key, we);
+                                                toBackfill.add(we);
+                                            }
+                                        }
+                                        if (!toBackfill.isEmpty()) {
+                                            try {
+                                                watchedEpisodeRepository.saveAll(toBackfill);
+                                                log.info("Série concluída {} ({}): {} episódios marcados no banco local.",
+                                                        tmdbId, title, toBackfill.size());
+                                            } catch (Exception e) {
+                                                log.error("Erro ao persistir episódios da série concluída {}", tmdbId, e);
+                                            }
+                                        }
+                                    }
 
                                     // Map episodes to set watched status
                                     List<EpisodeDTO> enrichedEpisodes = new ArrayList<>();
@@ -1251,26 +1302,25 @@ public class ReleaseRadarService {
             watchedEpisodeRepository.saveAll(toSave);
             log.info("Marcados {} episódios como assistidos até S{}E{} para série {}", toSave.size(), seasonNumber, episodeNumber, serieId);
 
-            // Sync batch to LMS-Filmes via lms-favorite
+            // Sync to LMS-Filmes via lms-favorite
             if (authHeader != null && !authHeader.isBlank()) {
-                List<Map<String, Object>> batchPayload = toSave.stream()
-                        .map(we -> Map.<String, Object>of(
-                                "serieId", we.getSerieId(),
-                                "seasonNumber", we.getSeasonNumber(),
-                                "episodeNumber", we.getEpisodeNumber()
-                        ))
-                        .toList();
-
-                lmsFavoriteWebClient.post()
-                        .uri("/watched/episodes/batch")
-                        .header(HttpHeaders.AUTHORIZATION, authHeader)
-                        .bodyValue(batchPayload)
-                        .retrieve()
-                        .bodyToMono(Void.class)
+                Flux.fromIterable(toSave)
+                        .flatMap(we -> lmsFavoriteWebClient.post()
+                                .uri("/watched/episodes")
+                                .header(HttpHeaders.AUTHORIZATION, authHeader)
+                                .bodyValue(Map.of(
+                                        "serieId", we.getSerieId(),
+                                        "seasonNumber", we.getSeasonNumber(),
+                                        "episodeNumber", we.getEpisodeNumber()
+                                ))
+                                .retrieve()
+                                .bodyToMono(Void.class)
+                                .onErrorResume(e -> Mono.empty())
+                        )
                         .subscribeOn(Schedulers.boundedElastic())
                         .subscribe(
-                                s -> log.info("Lote de {} episódios da série {} sincronizado com LMS-Filmes", batchPayload.size(), serieId),
-                                err -> log.error("Erro ao sincronizar lote de episódios com LMS-Filmes: {}", err.getMessage())
+                                s -> {},
+                                err -> log.error("Erro ao sincronizar episódios com LMS-Filmes: {}", err.getMessage())
                         );
             }
         }
@@ -1369,7 +1419,7 @@ public class ReleaseRadarService {
             // Delete all watched episodes in LMS-Filmes via lms-favorite
             if (authHeader != null && !authHeader.isBlank()) {
                 lmsFavoriteWebClient.delete()
-                        .uri("/watched/episodes/serie/" + serieId)
+                        .uri("/watched/episodes/serie/" + serieId + "/rewatch")
                         .header(HttpHeaders.AUTHORIZATION, authHeader)
                         .retrieve()
                         .bodyToMono(Void.class)
