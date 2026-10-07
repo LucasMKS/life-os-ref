@@ -527,6 +527,12 @@ export const radarApi = {
     });
     return response.data;
   },
+  resetRewatch: async (serieId: string) => {
+    const response = await api.post("/gaming/radar/series/reset-rewatch", null, {
+      params: { serieId },
+    });
+    return response.data;
+  },
 };
 
 

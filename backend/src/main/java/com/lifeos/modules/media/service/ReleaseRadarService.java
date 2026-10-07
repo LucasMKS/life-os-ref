@@ -791,18 +791,30 @@ public class ReleaseRadarService {
                 }
             }
 
-            // Batch fetch watched episodes, preferences, and ratings
+            // Batch fetch preferences first to know rewatching states
+            List<SeriePreference> allPreferences = seriePreferenceRepository.findByUserIdAndSerieIdIn(userId, seriesWithStatus.keySet());
+            Map<String, SeriePreference> prefBySerie = allPreferences.stream()
+                    .collect(java.util.stream.Collectors.toMap(SeriePreference::getSerieId, p -> p, (a, b) -> a));
+
+            Set<String> rewatchingSerieIds = allPreferences.stream()
+                    .filter(SeriePreference::isRewatching)
+                    .map(SeriePreference::getSerieId)
+                    .collect(Collectors.toSet());
+
+            // Batch fetch watched episodes
             List<WatchedEpisode> localWatched = watchedEpisodeRepository.findByUserIdAndSerieIdIn(userId, seriesWithStatus.keySet());
             List<WatchedEpisode> allWatched = new ArrayList<>(localWatched);
 
-            // Se alguma série não possui episódios assistidos localmente e não está marcada como COMPLETED,
-            // tenta recuperar os episódios assistidos já salvos no LMS Filmes via /watched/episodes/serie/{serieId}
+            // Se alguma série não possui episódios assistidos localmente, não está marcada como COMPLETED,
+            // e NÃO está em rewatch, tenta recuperar os episódios assistidos já salvos no LMS Filmes via /watched/episodes/serie/{serieId}
             Set<String> seriesWithLocalEpisodes = localWatched.stream()
                     .map(WatchedEpisode::getSerieId)
                     .collect(Collectors.toSet());
 
             List<String> needRemoteSync = seriesWithStatus.entrySet().stream()
-                    .filter(e -> !seriesWithLocalEpisodes.contains(e.getKey()) && !"COMPLETED".equalsIgnoreCase(e.getValue()))
+                    .filter(e -> !seriesWithLocalEpisodes.contains(e.getKey())
+                            && !"COMPLETED".equalsIgnoreCase(e.getValue())
+                            && !rewatchingSerieIds.contains(e.getKey()))
                     .map(Map.Entry::getKey)
                     .toList();
 
@@ -824,8 +836,6 @@ public class ReleaseRadarService {
                 }
             }
 
-            List<SeriePreference> allPreferences = seriePreferenceRepository.findByUserIdAndSerieIdIn(userId, seriesWithStatus.keySet());
-
             Map<String, RatingStatusDTO> ratingsMap = new java.util.HashMap<>();
             try {
                 Map<String, RatingStatusDTO> fetchedRatings = fetchSeriesRatings(new ArrayList<>(seriesWithStatus.keySet()), authHeader).block();
@@ -839,8 +849,6 @@ public class ReleaseRadarService {
             // Group by serieId for O(1) lookup
             Map<String, List<WatchedEpisode>> watchedBySerie = allWatched.stream()
                     .collect(java.util.stream.Collectors.groupingBy(WatchedEpisode::getSerieId));
-            Map<String, SeriePreference> prefBySerie = allPreferences.stream()
-                    .collect(java.util.stream.Collectors.toMap(SeriePreference::getSerieId, p -> p, (a, b) -> a));
 
             // Fetch status for all series in parallel using batch-loaded data
             final Map<String, RatingStatusDTO> finalRatingsMap = ratingsMap;
@@ -1063,20 +1071,6 @@ public class ReleaseRadarService {
                                             unwatchedCount++;
                                             if (nextToWatch == null) {
                                                 nextToWatch = enriched;
-                                            }
-                                        }
-                                    }
-
-                                    if (unwatchedCount == 0 && rewatching) {
-                                        rewatching = false;
-                                        if (prefOpt.isPresent()) {
-                                            SeriePreference pref = prefOpt.get();
-                                            pref.setRewatching(false);
-                                            try {
-                                                seriePreferenceRepository.save(pref);
-                                                log.info("Rewatch concluído automaticamente para série {} (unwatchedCount=0)", tmdbId);
-                                            } catch (Exception e) {
-                                                log.error("Erro ao salvar término de rewatch para série {}", tmdbId, e);
                                             }
                                         }
                                     }
@@ -1402,35 +1396,67 @@ public class ReleaseRadarService {
                         .userId(userId)
                         .serieId(serieId)
                         .build());
-        
+
         if (!pref.isRewatching()) {
             pref.setRewatching(true);
             pref.setRewatchCount(pref.getRewatchCount() + 1);
             seriePreferenceRepository.save(pref);
-            
-            // Send rewatch event to LMS-Filmes via RabbitMQ
-            // Using email for userId since the token sub is the email
-            SerieRewatchEvent event = new SerieRewatchEvent(userId, serieId); eventPublisher.publishEvent(event);
-            log.info("Evento de rewatch disparado para série {} via RabbitMQ", serieId);
-            
-            // Delete all watched episodes for this user and series so they can mark them as watched again
+
+            // Send rewatch event
+            SerieRewatchEvent event = new SerieRewatchEvent(userId, serieId);
+            eventPublisher.publishEvent(event);
+            log.info("Evento de rewatch disparado para série {}", serieId);
+
+            // Delete all watched episodes locally for this user and series so they can mark them as watched again
             watchedEpisodeRepository.deleteByUserIdAndSerieId(userId, serieId);
 
-            // Delete all watched episodes in LMS-Filmes via lms-favorite
+            // Update local tracked status to WATCHING
+            userTrackedMediaRepository.findByUserIdAndTmdbId(userId, serieId).ifPresent(m -> {
+                m.setStatus("WATCHING");
+                userTrackedMediaRepository.save(m);
+            });
+
+            // Synchronously delete all watched episodes in LMS-Filmes via lms-favorite
             if (authHeader != null && !authHeader.isBlank()) {
-                lmsFavoriteWebClient.delete()
-                        .uri("/watched/episodes/serie/" + serieId + "/rewatch")
-                        .header(HttpHeaders.AUTHORIZATION, authHeader)
-                        .retrieve()
-                        .bodyToMono(Void.class)
-                        .subscribeOn(Schedulers.boundedElastic())
-                        .subscribe(
-                                s -> log.info("Histórico de episódios da série {} limpo no LMS-Filmes para rewatch", serieId),
-                                err -> log.error("Erro ao limpar histórico no LMS-Filmes para rewatch: {}", err.getMessage())
-                        );
+                try {
+                    lmsFavoriteWebClient.delete()
+                            .uri("/watched/episodes/serie/" + serieId + "/rewatch")
+                            .header(HttpHeaders.AUTHORIZATION, authHeader)
+                            .retrieve()
+                            .bodyToMono(Void.class)
+                            .timeout(Duration.ofSeconds(4))
+                            .onErrorResume(e -> {
+                                log.warn("Aviso ao limpar histórico no LMS-Filmes: {}", e.getMessage());
+                                return Mono.empty();
+                            })
+                            .block();
+                    log.info("Histórico de episódios da série {} limpo no LMS-Filmes para rewatch", serieId);
+                } catch (Exception err) {
+                    log.error("Erro ao limpar histórico no LMS-Filmes para rewatch: {}", err.getMessage());
+                }
+
+                try {
+                    lmsFavoriteWebClient.patch()
+                            .uri(uriBuilder -> uriBuilder.path("/watchlist/series/status")
+                                    .queryParam("serieId", serieId)
+                                    .queryParam("status", "WATCHING")
+                                    .build())
+                            .header(HttpHeaders.AUTHORIZATION, authHeader)
+                            .retrieve()
+                            .bodyToMono(Void.class)
+                            .timeout(Duration.ofSeconds(4))
+                            .onErrorResume(e -> {
+                                log.warn("Aviso ao atualizar status no LMS-Filmes: {}", e.getMessage());
+                                return Mono.empty();
+                            })
+                            .block();
+                    log.info("Status da série {} atualizado para WATCHING no LMS-Filmes", serieId);
+                } catch (Exception err) {
+                    log.warn("Aviso ao atualizar status no LMS-Filmes: {}", err.getMessage());
+                }
             }
 
-            log.info("Iniciado rewatch para série {}. rewatchCount={}, rewatching=true. Histórico de episódios limpo.", 
+            log.info("Iniciado rewatch para série {}. rewatchCount={}, rewatching=true. Histórico de episódios limpo.",
                     serieId, pref.getRewatchCount());
         }
     }
@@ -1443,11 +1469,23 @@ public class ReleaseRadarService {
             pref.setRewatching(false);
             pref.setRewatchCount(Math.max(0, pref.getRewatchCount() - 1));
             seriePreferenceRepository.save(pref);
-            
+
             // Mark all episodes as watched again to restore completion state
             markAllEpisodesAsWatchedUpTo(userId, serieId, 999, 999, authHeader);
-            log.info("Cancelado rewatch para série {}. rewatchCount={}, rewatching=false. Todos episódios remarcados como assistidos.", 
+            log.info("Cancelado rewatch para série {}. rewatchCount={}, rewatching=false. Todos episódios remarcados como assistidos.",
                     serieId, pref.getRewatchCount());
+        }
+    }
+
+    @Transactional
+    public void resetRewatch(String userId, String serieId, String authHeader) {
+        SeriePreference pref = seriePreferenceRepository.findByUserIdAndSerieId(userId, serieId)
+                .orElse(null);
+        if (pref != null) {
+            pref.setRewatching(false);
+            pref.setRewatchCount(0);
+            seriePreferenceRepository.save(pref);
+            log.info("Contador de rewatch resetado para série {} do usuário {}", serieId, userId);
         }
     }
 

@@ -137,4 +137,14 @@ public class ReleaseRadarController {
         radarService.cancelRewatch(safeUserId, serieId, authHeader);
         return ResponseEntity.ok().build();
     }
+
+    @PostMapping("/series/reset-rewatch")
+    public ResponseEntity<Void> resetRewatch(
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestParam String serieId,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        String safeUserId = (userId != null) ? userId : "default";
+        radarService.resetRewatch(safeUserId, serieId, authHeader);
+        return ResponseEntity.ok().build();
+    }
 }

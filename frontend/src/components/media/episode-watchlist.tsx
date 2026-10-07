@@ -331,6 +331,39 @@ export function EpisodeWatchlist() {
     },
   });
 
+  const resetRewatchMutation = useMutation({
+    mutationFn: ({ serieId }: { serieId: string }) => radarApi.resetRewatch(serieId),
+    onMutate: async (variables) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previousShows = queryClient.getQueryData<SerieWatchStatusDTO[]>(queryKey);
+      queryClient.setQueryData<SerieWatchStatusDTO[]>(queryKey, (old) => {
+        if (!old) return [];
+        return old.map((show) => {
+          if (show.tmdbId !== variables.serieId) return show;
+          return {
+            ...show,
+            rewatching: false,
+            rewatchCount: 0,
+          };
+        });
+      });
+      return { previousShows };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousShows) {
+        queryClient.setQueryData(queryKey, context.previousShows);
+      }
+      toast.error("Erro ao resetar contador de rewatch.");
+    },
+    onSuccess: () => {
+      toast.success("Contador de rewatch resetado com sucesso.");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["media-episodes-to-watch"] });
+      queryClient.invalidateQueries({ queryKey: ["media-weekly-calendar"] });
+    },
+  });
+
   // Helper to check if a show is not released yet (future release or 0 aired episodes)
   const isShowUnreleased = (s: SerieWatchStatusDTO) => {
     const todayStr = new Date().toISOString().split("T")[0];
@@ -806,21 +839,41 @@ export function EpisodeWatchlist() {
 
                               {/* Rewatch Actions */}
                               {show.unwatchedCount === 0 && !show.rewatching && !show.watchLater && (
-                                <button
-                                  onClick={() => {
-                                    if (window.confirm("Deseja iniciar o rewatch desta série? Isso limpará o histórico local de episódios assistidos para que você possa marcá-los novamente.")) {
-                                      startRewatchMutation.mutate({
-                                        serieId: show.tmdbId,
-                                      });
-                                    }
-                                  }}
-                                  disabled={startRewatchMutation.isPending}
-                                  className="text-[10px] md:text-xs font-semibold flex items-center gap-1 text-purple-400 hover:text-purple-300 transition-colors whitespace-nowrap shrink-0"
-                                  title="Iniciar novo rewatch (assistir novamente)"
-                                >
-                                  <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-                                  <span>Rever</span>
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      if (window.confirm("Deseja iniciar o rewatch desta série? Isso limpará o histórico local de episódios assistidos para que você possa marcá-los novamente conforme for assistindo.")) {
+                                        startRewatchMutation.mutate({
+                                          serieId: show.tmdbId,
+                                        });
+                                      }
+                                    }}
+                                    disabled={startRewatchMutation.isPending}
+                                    className="text-[10px] md:text-xs font-semibold flex items-center gap-1 text-purple-400 hover:text-purple-300 transition-colors whitespace-nowrap shrink-0"
+                                    title="Iniciar novo rewatch (assistir novamente)"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                                    <span>Rever</span>
+                                  </button>
+
+                                  {show.rewatchCount !== undefined && show.rewatchCount > 0 && (
+                                    <button
+                                      onClick={() => {
+                                        if (window.confirm("Deseja zerar a contagem de rewatch desta série (remover o 'Viu 2x' e retornar para o estado inicial)?")) {
+                                          resetRewatchMutation.mutate({
+                                            serieId: show.tmdbId,
+                                          });
+                                        }
+                                      }}
+                                      disabled={resetRewatchMutation.isPending}
+                                      className="text-[10px] md:text-xs font-semibold flex items-center gap-1 text-zinc-400 hover:text-amber-400 transition-colors whitespace-nowrap shrink-0"
+                                      title="Zerar contador de rewatch"
+                                    >
+                                      <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                                      <span>Zerar rewatch</span>
+                                    </button>
+                                  )}
+                                </>
                               )}
                               {show.rewatching && (
                                 <button
