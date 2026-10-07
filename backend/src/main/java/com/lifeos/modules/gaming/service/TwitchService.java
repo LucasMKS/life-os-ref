@@ -19,6 +19,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -62,6 +63,7 @@ public class TwitchService {
 
     private final String REDIS_KEY_PREFIX = "twitch_live_user:";
     private final String REDIS_NOTIFIED_PREFIX = "twitch_notified_today:";
+    private static final ZoneId SAO_PAULO_ZONE = ZoneId.of("America/Sao_Paulo");
 
     private void generateAccessToken() {
         log.info("Gerando novo token de acesso da Twitch...");
@@ -120,6 +122,10 @@ public class TwitchService {
             if (data.isArray()) {
                 for (JsonNode stream : data) {
                     String userName = stream.path("user_name").asText();
+                    String userLogin = stream.path("user_login").asText();
+                    String canonicalChannel = (userLogin != null && !userLogin.isBlank())
+                            ? userLogin.trim().toLowerCase()
+                            : userName.trim().toLowerCase();
                     String gameName = stream.path("game_name").asText();
                     String title = stream.path("title").asText();
                     String thumbUrl = stream.path("thumbnail_url").asText()
@@ -132,11 +138,12 @@ public class TwitchService {
                             stream.path("type").asText(),
                             thumbUrl);
 
-                    liveStreamsByChannelName.put(userName.toLowerCase(), streamInfo);
+                    liveStreamsByChannelName.put(canonicalChannel, streamInfo);
 
-                    String notifiedKey = REDIS_NOTIFIED_PREFIX + userName.toLowerCase();
+                    String today = LocalDate.now(SAO_PAULO_ZONE).toString();
+                    String notifiedKey = REDIS_NOTIFIED_PREFIX + canonicalChannel + ":" + today;
 
-                    Boolean acquired = redisTemplate.opsForValue().setIfAbsent(notifiedKey, "true", Duration.ofHours(10));
+                    Boolean acquired = redisTemplate.opsForValue().setIfAbsent(notifiedKey, "true", Duration.ofHours(24));
                     if (Boolean.TRUE.equals(acquired)) {
                         String messageText = String.format(
                                 "🎮 <b>%s está Ao Vivo!</b>\n\n" +
@@ -145,14 +152,14 @@ public class TwitchService {
                                 userName, gameName, title
                         );
 
-                        String channelUrl = "https://twitch.tv/" + userName.toLowerCase();
+                        String channelUrl = "https://twitch.tv/" + canonicalChannel;
                         eventPublisher.publishEvent(com.lifeos.shared.event.NotificationEvent.builder()
                                 .type("TWITCH")
                                 .message(messageText)
                                 .buttonLabel("Assistir agora →")
                                 .buttonPath(channelUrl)
                                 .build());
-                        log.info("Notificação enviada para {} e registrada no Anti-Spam", userName);
+                        log.info("Notificação enviada para {} e registrada no Anti-Spam (chave={})", userName, notifiedKey);
                     }
                 }
             }
@@ -163,7 +170,7 @@ public class TwitchService {
             for (Map.Entry<String, List<UserTrackedTwitchChannel>> entry : channelsByUser.entrySet()) {
                 String userId = entry.getKey();
                 List<TwitchStreamDTO> userLiveStreams = entry.getValue().stream()
-                        .map(tracked -> liveStreamsByChannelName.get(tracked.getChannelName().toLowerCase()))
+                        .map(tracked -> liveStreamsByChannelName.get(tracked.getChannelName().toLowerCase().trim()))
                         .filter(Objects::nonNull)
                         .toList();
                 try {

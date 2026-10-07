@@ -28,6 +28,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: lifeos-redis
+    command: redis-server --appendonly yes
     networks:
       - lifeos-network
     ports:

@@ -171,8 +171,6 @@ public class ReleaseRadarService {
             finalList.addAll(upcoming);
             finalList.sort(Comparator.comparing(ReleaseRadarDTO::releaseDate));
 
-            processBatchNotifications(finalList, userId);
-
             if (!finalList.isEmpty()) {
                 redisTemplate.opsForValue().set(cacheKey, objectMapper.writeValueAsString(finalList), Duration.ofHours(3));
             }
@@ -688,6 +686,7 @@ public class ReleaseRadarService {
     private void processBatchNotifications(List<ReleaseRadarDTO> releases, String userId) {
         LocalDate today = LocalDate.now(SAO_PAULO_ZONE);
         List<String> messages = new ArrayList<>();
+        String effectiveUserId = (userId != null && !userId.isBlank() && !"default".equals(userId)) ? userId : "1";
 
         for (ReleaseRadarDTO dto : releases) {
             try {
@@ -696,7 +695,7 @@ public class ReleaseRadarService {
                     String episodeSuffix = "SERIES".equals(dto.type())
                             ? (":S" + dto.seasonNumber() + "E" + dto.episodeNumber())
                             : "";
-                    String notifiedKey = REDIS_NOTIFIED_PREFIX + dto.tmdbId() + episodeSuffix + ":" + releaseDate.toString() + ":" + userId;
+                    String notifiedKey = REDIS_NOTIFIED_PREFIX + dto.tmdbId() + episodeSuffix + ":" + releaseDate.toString() + ":" + effectiveUserId;
                     Boolean acquired = redisTemplate.opsForValue().setIfAbsent(notifiedKey, "true", Duration.ofHours(48));
 
                     if (Boolean.TRUE.equals(acquired)) {
@@ -728,13 +727,13 @@ public class ReleaseRadarService {
             String buttonUrl = "https://filmes.lucasmks.com.br/series/radar";
 
             eventPublisher.publishEvent(NotificationEvent.builder()
-                    .userId(userId)
+                    .userId(effectiveUserId)
                     .type("MEDIA")
                     .message(messageText.toString())
                     .buttonLabel(buttonLabel)
                     .buttonPath(buttonUrl)
                     .build());
-            log.info("Notificação de Radar agregada enviada com {} lançamentos.", messages.size());
+            log.info("Notificação de Radar agregada enviada com {} lançamentos para usuário {}.", messages.size(), effectiveUserId);
         }
     }
 
