@@ -103,10 +103,11 @@ export function FinanceDashboard() {
     color: PRESET_COLORS[0],
   });
 
-  const { data: subscriptions = [], isLoading } = useQuery({
+  const { data: rawSubscriptions = [], isLoading } = useQuery({
     queryKey: ["finance-subscriptions"],
     queryFn: financeApi.getSubscriptions,
   });
+  const subscriptions = Array.isArray(rawSubscriptions) ? rawSubscriptions : [];
 
   const addMutation = useMutation({
     mutationFn: financeApi.addSubscription,

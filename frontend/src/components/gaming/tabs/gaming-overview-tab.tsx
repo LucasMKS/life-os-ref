@@ -76,8 +76,8 @@ function SteamMiniCard() {
 
   const isPlaying = status?.gameextrainfo;
   const weeklyHours = Math.round(
-    (playtimeStats?.reduce(
-      (acc: number, curr: any) => acc + curr.minutesPlayed,
+    ((Array.isArray(playtimeStats) ? playtimeStats : []).reduce(
+      (acc: number, curr: any) => acc + (curr?.minutesPlayed || 0),
       0
     ) || 0) / 60
   );

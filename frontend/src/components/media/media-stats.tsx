@@ -28,17 +28,19 @@ import {
 
 export function MediaStats() {
   const userId = useAuthStore((state) => state.userId);
-  const { data: shows = [], isLoading: isLoadingSeries } = useQuery<SerieWatchStatusDTO[]>({
+  const { data: rawShows = [], isLoading: isLoadingSeries } = useQuery<SerieWatchStatusDTO[]>({
     queryKey: ["media-episodes-to-watch", userId],
     queryFn: radarApi.getEpisodesToWatch,
     staleTime: 1000 * 60 * 5,
   });
+  const shows = Array.isArray(rawShows) ? rawShows : [];
 
-  const { data: movies = [], isLoading: isLoadingMovies } = useQuery({
+  const { data: rawMovies = [], isLoading: isLoadingMovies } = useQuery({
     queryKey: ["media-watchlist-movies-count"],
     queryFn: watchlistMoviesApi.getWatchlistMovies,
     staleTime: 1000 * 60 * 5,
   });
+  const movies = Array.isArray(rawMovies) ? rawMovies : [];
 
   if (isLoadingSeries || isLoadingMovies) {
     return (

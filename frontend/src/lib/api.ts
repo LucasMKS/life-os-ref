@@ -538,8 +538,54 @@ export const radarApi = {
 
 export const statsApi = {
   getMediaBalance: async () => {
-    const response = await ratingApi.get("/lms-rating/stats/balance");
-    return response.data;
+    try {
+      const response = await ratingApi.get("/lms-rating/stats/balance/list");
+      if (Array.isArray(response.data)) {
+        return response.data;
+      }
+      if (response.data && typeof response.data === "object") {
+        return [
+          {
+            name: "Filmes",
+            value: Number(response.data.totalMovies ?? response.data.movies ?? 0),
+            color: "#eab308",
+          },
+          {
+            name: "Séries",
+            value: Number(response.data.totalSeries ?? response.data.series ?? 0),
+            color: "#a855f7",
+          },
+        ];
+      }
+      return [];
+    } catch {
+      try {
+        const fallbackRes = await ratingApi.get("/lms-rating/stats/balance");
+        if (Array.isArray(fallbackRes.data)) {
+          return fallbackRes.data;
+        }
+        if (fallbackRes.data && typeof fallbackRes.data === "object") {
+          return [
+            {
+              name: "Filmes",
+              value: Number(fallbackRes.data.totalMovies ?? fallbackRes.data.movies ?? 0),
+              color: "#eab308",
+            },
+            {
+              name: "Séries",
+              value: Number(fallbackRes.data.totalSeries ?? fallbackRes.data.series ?? 0),
+              color: "#a855f7",
+            },
+          ];
+        }
+      } catch {
+        // Ignora erros de rede/serviço e retorna fallback seguro
+      }
+      return [
+        { name: "Filmes", value: 0, color: "#eab308" },
+        { name: "Séries", value: 0, color: "#a855f7" },
+      ];
+    }
   },
   getDailyPlaytime: async (startDate?: string, endDate?: string) => {
     const response = await api.get("/gaming/stats/playtime", {

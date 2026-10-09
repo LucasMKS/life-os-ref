@@ -60,7 +60,7 @@ const renderMessage = (html: string) =>
     .replace(/<a\s/gi, '<a target="_blank" rel="noopener noreferrer" ');
 
 function groupByDate(notifications: AppNotification[]): Record<string, AppNotification[]> {
-  return notifications.reduce((acc, n) => {
+  return (Array.isArray(notifications) ? notifications : []).reduce((acc, n) => {
     const date = new Date(n.createdAt).toLocaleDateString("pt-BR", {
       weekday: "long",
       day: "2-digit",

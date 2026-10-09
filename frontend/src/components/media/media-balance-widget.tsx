@@ -30,13 +30,30 @@ const CustomTooltip = ({ active, payload }: any) => {
 };
 
 export function MediaBalanceWidget() {
-  const { data = [], isLoading } = useQuery({
+  const { data: rawData = [], isLoading } = useQuery({
     queryKey: ["media-balance-stats"],
     queryFn: statsApi.getMediaBalance,
   });
 
+  const data = Array.isArray(rawData)
+    ? rawData
+    : rawData && typeof rawData === "object"
+    ? [
+        {
+          name: "Filmes",
+          value: Number((rawData as any).totalMovies ?? (rawData as any).movies ?? 0),
+          color: "#eab308",
+        },
+        {
+          name: "Séries",
+          value: Number((rawData as any).totalSeries ?? (rawData as any).series ?? 0),
+          color: "#a855f7",
+        },
+      ]
+    : [];
+
   const totalMedia = data.reduce(
-    (acc: number, curr: any) => acc + curr.value,
+    (acc: number, curr: any) => acc + (curr?.value || 0),
     0,
   );
 

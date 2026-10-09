@@ -23,7 +23,7 @@ const CustomTooltip = ({ active, payload }: any) => {
 };
 
 export function ReadingPulseWidget() {
-  const { data = [], isLoading } = useQuery({
+  const { data: rawData = [], isLoading } = useQuery({
     queryKey: ["reading-pulse-stats"],
     queryFn: readingApi.getReadingPulse,
   });
@@ -34,8 +34,10 @@ export function ReadingPulseWidget() {
     staleTime: 1000 * 60 * 5,
   });
 
+  const data = Array.isArray(rawData) ? rawData : [];
+
   const totalPagesLast7Days = data.reduce(
-    (acc: number, curr: any) => acc + curr.pages,
+    (acc: number, curr: any) => acc + (curr?.pages || 0),
     0,
   );
 
