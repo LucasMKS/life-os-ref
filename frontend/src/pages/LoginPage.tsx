@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/authStore";
 import { authService } from "@/lib/api";
 import { cookieUtils } from "@/lib/cookieUtils";
+import { extractUserIdFromToken } from "@/lib/jwtUtils";
 import { Lock, Mail, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
@@ -22,13 +23,17 @@ export default function LoginPage() {
       const response = await authService.login({ email, password });
 
       const token = response.token;
-      const userId = response.user?.id;
+      let userId = response.user?.id != null ? String(response.user.id) : null;
+
+      if (!userId && token) {
+        userId = extractUserIdFromToken(token);
+      }
 
       if (!token) {
         throw new Error("Token não recebido do servidor.");
       }
 
-      setAuth(token, String(userId || "user"));
+      setAuth(token, String(userId || "1"));
       cookieUtils.setAuthToken(token);
 
       if (response.user) {

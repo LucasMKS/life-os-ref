@@ -2,16 +2,8 @@ import { useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/lib/authStore";
 import { cookieUtils } from "@/lib/cookieUtils";
+import { decodeJwtPayload } from "@/lib/jwtUtils";
 import { Loader2 } from "lucide-react";
-
-function decodeJwtPayload(token: string): Record<string, any> | null {
-  try {
-    const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-    return JSON.parse(atob(base64));
-  } catch {
-    return null;
-  }
-}
 
 function CallbackContent() {
   const router = useRouter();

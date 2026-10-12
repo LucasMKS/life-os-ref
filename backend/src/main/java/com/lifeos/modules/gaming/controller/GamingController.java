@@ -1,5 +1,6 @@
 package com.lifeos.modules.gaming.controller;
 
+import com.lifeos.core.security.UserContext;
 import com.lifeos.modules.gaming.dto.CreateTrackedGameRequest;
 import com.lifeos.modules.gaming.dto.SteamAppSearchResult;
 import com.lifeos.modules.gaming.model.GameNews;
@@ -23,13 +24,13 @@ public class GamingController {
     @GetMapping("/news")
     public ResponseEntity<List<GameNews>> getLatestNews(
             @RequestHeader(value = "X-User-Id", required = false) String userId) {
-        return ResponseEntity.ok(gamingNewsService.getLatestNews(userId));
+        return ResponseEntity.ok(gamingNewsService.getLatestNews(UserContext.resolveUserId(userId)));
     }
 
     @GetMapping("/preferences")
     public ResponseEntity<List<UserTrackedGame>> getTrackedGames(
             @RequestHeader(value = "X-User-Id", required = false) String userId) {
-        return ResponseEntity.ok(gamingNewsService.getTrackedGames(userId));
+        return ResponseEntity.ok(gamingNewsService.getTrackedGames(UserContext.resolveUserId(userId)));
     }
 
     @GetMapping("/steam/search")
@@ -41,14 +42,14 @@ public class GamingController {
     public ResponseEntity<UserTrackedGame> addTrackedGame(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @Valid @RequestBody CreateTrackedGameRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(gamingNewsService.createTrackedGame(userId, request));
+        return ResponseEntity.status(HttpStatus.CREATED).body(gamingNewsService.createTrackedGame(UserContext.resolveUserId(userId), request));
     }
 
     @DeleteMapping("/preferences/{trackedGameId}")
     public ResponseEntity<Void> removeTrackedGame(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable String trackedGameId) {
-        gamingNewsService.deleteTrackedGame(userId, trackedGameId);
+        gamingNewsService.deleteTrackedGame(UserContext.resolveUserId(userId), trackedGameId);
         return ResponseEntity.noContent().build();
     }
 }

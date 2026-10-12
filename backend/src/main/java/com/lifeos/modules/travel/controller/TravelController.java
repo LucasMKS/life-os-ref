@@ -1,5 +1,6 @@
 package com.lifeos.modules.travel.controller;
 
+import com.lifeos.core.security.UserContext;
 import com.lifeos.modules.travel.dto.ItineraryItemRequest;
 import com.lifeos.modules.travel.dto.TripRequest;
 import com.lifeos.modules.travel.model.ItineraryItem;
@@ -62,14 +63,14 @@ public class TravelController {
     @GetMapping("/trips")
     public ResponseEntity<List<Trip>> getTrips(
             @RequestHeader(value = "X-User-Id", required = false) String userId) {
-        return ResponseEntity.ok(travelService.getUserTrips(userId));
+        return ResponseEntity.ok(travelService.getUserTrips(UserContext.resolveUserId(userId)));
     }
 
     @GetMapping("/trips/{tripId}")
     public ResponseEntity<Trip> getTrip(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable Long tripId) {
-        return ResponseEntity.ok(travelService.getTrip(tripId, userId));
+        return ResponseEntity.ok(travelService.getTrip(tripId, UserContext.resolveUserId(userId)));
     }
 
     @PostMapping("/trips")
@@ -77,7 +78,7 @@ public class TravelController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @Valid @RequestBody TripRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(travelService.createTrip(userId, request));
+                .body(travelService.createTrip(UserContext.resolveUserId(userId), request));
     }
 
     @PutMapping("/trips/{tripId}")
@@ -85,14 +86,14 @@ public class TravelController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable Long tripId,
             @Valid @RequestBody TripRequest request) {
-        return ResponseEntity.ok(travelService.updateTrip(tripId, userId, request));
+        return ResponseEntity.ok(travelService.updateTrip(tripId, UserContext.resolveUserId(userId), request));
     }
 
     @DeleteMapping("/trips/{tripId}")
     public ResponseEntity<Void> deleteTrip(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable Long tripId) {
-        travelService.deleteTrip(tripId, userId);
+        travelService.deleteTrip(tripId, UserContext.resolveUserId(userId));
         return ResponseEntity.noContent().build();
     }
 
@@ -102,7 +103,7 @@ public class TravelController {
             @PathVariable Long tripId,
             @Valid @RequestBody ItineraryItemRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(travelService.addItineraryItem(tripId, userId, request));
+                .body(travelService.addItineraryItem(tripId, UserContext.resolveUserId(userId), request));
     }
 
     @PutMapping("/trips/{tripId}/itinerary/{itemId}")
@@ -111,7 +112,7 @@ public class TravelController {
             @PathVariable Long tripId,
             @PathVariable Long itemId,
             @Valid @RequestBody ItineraryItemRequest request) {
-        return ResponseEntity.ok(travelService.updateItineraryItem(tripId, itemId, userId, request));
+        return ResponseEntity.ok(travelService.updateItineraryItem(tripId, itemId, UserContext.resolveUserId(userId), request));
     }
 
     @PatchMapping(value = "/trips/{tripId}/places", consumes = {"application/json", "text/plain", "*/*"})
@@ -119,7 +120,7 @@ public class TravelController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable Long tripId,
             @RequestBody(required = false) Object body) {
-        return ResponseEntity.ok(travelService.updatePlaces(tripId, userId, extractJsonString(body, "placesJson")));
+        return ResponseEntity.ok(travelService.updatePlaces(tripId, UserContext.resolveUserId(userId), extractJsonString(body, "placesJson")));
     }
 
     @PatchMapping(value = "/trips/{tripId}/shopping", consumes = {"application/json", "text/plain", "*/*"})
@@ -127,7 +128,7 @@ public class TravelController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable Long tripId,
             @RequestBody(required = false) Object body) {
-        return ResponseEntity.ok(travelService.updateShopping(tripId, userId, extractJsonString(body, "shoppingJson")));
+        return ResponseEntity.ok(travelService.updateShopping(tripId, UserContext.resolveUserId(userId), extractJsonString(body, "shoppingJson")));
     }
 
     @PatchMapping(value = "/trips/{tripId}/tasks", consumes = {"application/json", "text/plain", "*/*"})
@@ -135,7 +136,7 @@ public class TravelController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable Long tripId,
             @RequestBody(required = false) Object body) {
-        return ResponseEntity.ok(travelService.updateTasks(tripId, userId, extractJsonString(body, "tasksJson")));
+        return ResponseEntity.ok(travelService.updateTasks(tripId, UserContext.resolveUserId(userId), extractJsonString(body, "tasksJson")));
     }
 
     @PatchMapping(value = "/trips/{tripId}/checklist", consumes = {"application/json", "text/plain", "*/*"})
@@ -143,7 +144,7 @@ public class TravelController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable Long tripId,
             @RequestBody(required = false) Object body) {
-        return ResponseEntity.ok(travelService.updateChecklist(tripId, userId, extractJsonString(body, "checklistJson")));
+        return ResponseEntity.ok(travelService.updateChecklist(tripId, UserContext.resolveUserId(userId), extractJsonString(body, "checklistJson")));
     }
 
     @PatchMapping(value = "/trips/{tripId}/notes", consumes = {"application/json", "text/plain", "*/*"})
@@ -151,7 +152,7 @@ public class TravelController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable Long tripId,
             @RequestBody(required = false) Object body) {
-        return ResponseEntity.ok(travelService.updateNotes(tripId, userId, extractJsonString(body, "notes")));
+        return ResponseEntity.ok(travelService.updateNotes(tripId, UserContext.resolveUserId(userId), extractJsonString(body, "notes")));
     }
 
     @PatchMapping("/trips/{tripId}/itinerary/{itemId}/toggle")
@@ -159,7 +160,7 @@ public class TravelController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable Long tripId,
             @PathVariable Long itemId) {
-        return ResponseEntity.ok(travelService.toggleItineraryItemCompleted(tripId, itemId, userId));
+        return ResponseEntity.ok(travelService.toggleItineraryItemCompleted(tripId, itemId, UserContext.resolveUserId(userId)));
     }
 
     @DeleteMapping("/trips/{tripId}/itinerary/{itemId}")
@@ -167,7 +168,7 @@ public class TravelController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable Long tripId,
             @PathVariable Long itemId) {
-        travelService.deleteItineraryItem(tripId, itemId, userId);
+        travelService.deleteItineraryItem(tripId, itemId, UserContext.resolveUserId(userId));
         return ResponseEntity.noContent().build();
     }
 }

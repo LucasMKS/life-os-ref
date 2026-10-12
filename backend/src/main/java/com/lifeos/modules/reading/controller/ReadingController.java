@@ -1,5 +1,6 @@
 package com.lifeos.modules.reading.controller;
 
+import com.lifeos.core.security.UserContext;
 import com.lifeos.modules.reading.dto.BookDto;
 import com.lifeos.modules.reading.dto.BookNoteDto;
 import com.lifeos.modules.reading.dto.BookNoteRequest;
@@ -41,7 +42,8 @@ public class ReadingController {
     @GetMapping("/library")
     public ResponseEntity<List<BookDto>> getLibrary(
             @RequestHeader(value = "X-User-Id", required = false) String userId) {
-        return ResponseEntity.ok(readingService.getUserLibrary(userId).stream()
+        String activeUserId = UserContext.resolveUserId(userId);
+        return ResponseEntity.ok(readingService.getUserLibrary(activeUserId).stream()
                 .map(BookDto::summaryFrom)
                 .toList());
     }
@@ -58,7 +60,7 @@ public class ReadingController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestBody Book book) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(BookDto.from(readingService.addBookToLibrary(userId, book)));
+                .body(BookDto.from(readingService.addBookToLibrary(UserContext.resolveUserId(userId), book)));
     }
 
     @PatchMapping("/{bookId}/progress")
@@ -68,7 +70,7 @@ public class ReadingController {
             @Valid @RequestBody UpdateProgressRequest request) {
 
         int pagesRead = request.pagesRead() != null ? request.pagesRead() : 0;
-        readingService.updateProgress(userId, bookId, pagesRead, request.totalPages());
+        readingService.updateProgress(UserContext.resolveUserId(userId), bookId, pagesRead, request.totalPages());
 
         return ResponseEntity.noContent().build();
     }
@@ -80,7 +82,7 @@ public class ReadingController {
             @RequestBody UpdateDailyPagesRequest req) {
 
         return ResponseEntity.ok(BookDto.from(
-                readingService.updateDailyPages(userId, bookId, req.date(), req.pagesRead())));
+                readingService.updateDailyPages(UserContext.resolveUserId(userId), bookId, req.date(), req.pagesRead())));
     }
 
     @DeleteMapping("/{bookId}")
@@ -88,27 +90,27 @@ public class ReadingController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable String bookId) {
 
-        readingService.removeBookFromLibrary(userId, bookId);
+        readingService.removeBookFromLibrary(UserContext.resolveUserId(userId), bookId);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/stats/pulse")
     public ResponseEntity<List<ReadingPulseDTO>> getReadingPulse(
             @RequestHeader(value = "X-User-Id", required = false) String userId) {
-        return ResponseEntity.ok(readingService.getReadingPulse(userId));
+        return ResponseEntity.ok(readingService.getReadingPulse(UserContext.resolveUserId(userId)));
     }
 
     @GetMapping("/stats/summary")
     public ResponseEntity<ReadingSummaryDTO> getReadingSummary(
             @RequestHeader(value = "X-User-Id", required = false) String userId) {
-        return ResponseEntity.ok(readingService.getReadingSummary(userId));
+        return ResponseEntity.ok(readingService.getReadingSummary(UserContext.resolveUserId(userId)));
     }
 
     @GetMapping("/stats/recent-notes")
     public ResponseEntity<List<RecentNoteDTO>> getRecentNotes(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestParam(value = "limit", defaultValue = "5") int limit) {
-        return ResponseEntity.ok(readingService.getRecentNotes(userId, limit));
+        return ResponseEntity.ok(readingService.getRecentNotes(UserContext.resolveUserId(userId), limit));
     }
 
     @PostMapping("/books/{bookId}/rate")
@@ -120,14 +122,14 @@ public class ReadingController {
         Double rating = payload.rating() != null ? payload.rating() : 0.0;
         String review = payload.review() != null ? payload.review() : "";
 
-        return ResponseEntity.ok(BookDto.from(readingService.rateBook(userId, bookId, rating, review)));
+        return ResponseEntity.ok(BookDto.from(readingService.rateBook(UserContext.resolveUserId(userId), bookId, rating, review)));
     }
 
     @GetMapping("/books/{bookId}")
     public ResponseEntity<BookDto> getBookDetails(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable String bookId) {
-        return ResponseEntity.ok(BookDto.from(readingService.getBookDetails(userId, bookId)));
+        return ResponseEntity.ok(BookDto.from(readingService.getBookDetails(UserContext.resolveUserId(userId), bookId)));
     }
 
     @PostMapping("/books/{bookId}/notes")
@@ -137,7 +139,7 @@ public class ReadingController {
             @Valid @RequestBody BookNoteRequest payload) {
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(BookNoteDto.from(readingService.addBookNote(userId, bookId, payload.note())));
+                .body(BookNoteDto.from(readingService.addBookNote(UserContext.resolveUserId(userId), bookId, payload.note())));
     }
 
     @PutMapping("/books/{bookId}/notes/{noteId}")
@@ -147,7 +149,7 @@ public class ReadingController {
             @PathVariable String noteId,
             @Valid @RequestBody BookNoteRequest payload) {
 
-        return ResponseEntity.ok(BookNoteDto.from(readingService.updateBookNote(userId, noteId, payload.note())));
+        return ResponseEntity.ok(BookNoteDto.from(readingService.updateBookNote(UserContext.resolveUserId(userId), noteId, payload.note())));
     }
 
     @PatchMapping("/books/{bookId}/cover")
@@ -156,7 +158,7 @@ public class ReadingController {
             @PathVariable String bookId,
             @RequestBody UpdateCoverRequest payload) {
 
-        return ResponseEntity.ok(BookDto.from(readingService.updateCoverUrl(userId, bookId, payload.coverUrl())));
+        return ResponseEntity.ok(BookDto.from(readingService.updateCoverUrl(UserContext.resolveUserId(userId), bookId, payload.coverUrl())));
     }
 
     @PatchMapping("/books/{bookId}/author")
@@ -165,7 +167,7 @@ public class ReadingController {
             @PathVariable String bookId,
             @RequestBody UpdateAuthorRequest payload) {
 
-        return ResponseEntity.ok(BookDto.from(readingService.updateAuthor(userId, bookId, payload.author())));
+        return ResponseEntity.ok(BookDto.from(readingService.updateAuthor(UserContext.resolveUserId(userId), bookId, payload.author())));
     }
 
     @DeleteMapping("/books/{bookId}/notes/{noteId}")
@@ -174,7 +176,7 @@ public class ReadingController {
             @PathVariable String bookId,
             @PathVariable String noteId) {
 
-        readingService.deleteBookNote(userId, noteId);
+        readingService.deleteBookNote(UserContext.resolveUserId(userId), noteId);
         return ResponseEntity.noContent().build();
     }
 }

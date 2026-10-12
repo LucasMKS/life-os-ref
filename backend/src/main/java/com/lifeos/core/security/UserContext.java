@@ -17,4 +17,19 @@ public final class UserContext {
     public static void clear() {
         CURRENT_USER.remove();
     }
+
+    public static String resolveUserId(String headerUserId) {
+        if (headerUserId != null && !headerUserId.isBlank()
+                && !"undefined".equalsIgnoreCase(headerUserId)
+                && !"null".equalsIgnoreCase(headerUserId)
+                && !"default".equalsIgnoreCase(headerUserId)
+                && !"user".equalsIgnoreCase(headerUserId)) {
+            return headerUserId;
+        }
+        String contextUser = CURRENT_USER.get();
+        if (contextUser != null && !contextUser.isBlank()) {
+            return contextUser;
+        }
+        return (headerUserId != null && !headerUserId.isBlank()) ? headerUserId : null;
+    }
 }

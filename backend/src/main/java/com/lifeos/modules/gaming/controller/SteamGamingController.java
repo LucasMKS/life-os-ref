@@ -1,5 +1,6 @@
 package com.lifeos.modules.gaming.controller;
 
+import com.lifeos.core.security.UserContext;
 import com.lifeos.modules.gaming.dto.SteamOwnedGamesResponse;
 import com.lifeos.modules.gaming.dto.SteamPlayerSummaryResponse;
 import com.lifeos.modules.gaming.dto.UpdateTrackedGameRequest;
@@ -19,51 +20,51 @@ public class SteamGamingController {
 
     @PostMapping("/steam/link")
     public ResponseEntity<SteamProfile> linkAccount(
-            @RequestHeader("X-User-Id") String userId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestParam String steamId) {
-        return ResponseEntity.ok(gamingService.linkSteamAccount(userId, steamId));
+        return ResponseEntity.ok(gamingService.linkSteamAccount(UserContext.resolveUserId(userId), steamId));
     }
 
     @GetMapping("/steam/profile")
-    public ResponseEntity<SteamProfile> getProfile(@RequestHeader("X-User-Id") String userId) {
-        return gamingService.getSteamProfile(userId)
+    public ResponseEntity<SteamProfile> getProfile(@RequestHeader(value = "X-User-Id", required = false) String userId) {
+        return gamingService.getSteamProfile(UserContext.resolveUserId(userId))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/steam/status")
-    public ResponseEntity<SteamPlayerSummaryResponse.Player> getStatus(@RequestHeader("X-User-Id") String userId) {
-        return ResponseEntity.ok(gamingService.getCurrentStatus(userId));
+    public ResponseEntity<SteamPlayerSummaryResponse.Player> getStatus(@RequestHeader(value = "X-User-Id", required = false) String userId) {
+        return ResponseEntity.ok(gamingService.getCurrentStatus(UserContext.resolveUserId(userId)));
     }
 
     @GetMapping("/steam/library")
-    public ResponseEntity<SteamOwnedGamesResponse> getLibrary(@RequestHeader("X-User-Id") String userId) {
-        return ResponseEntity.ok(gamingService.getLibrary(userId));
+    public ResponseEntity<SteamOwnedGamesResponse> getLibrary(@RequestHeader(value = "X-User-Id", required = false) String userId) {
+        return ResponseEntity.ok(gamingService.getLibrary(UserContext.resolveUserId(userId)));
     }
 
     @GetMapping("/steam/recommendations")
-    public ResponseEntity<List<SteamOwnedGamesResponse.Game>> getRecommendations(@RequestHeader("X-User-Id") String userId) {
-        return ResponseEntity.ok(gamingService.getRecommendations(userId));
+    public ResponseEntity<List<SteamOwnedGamesResponse.Game>> getRecommendations(@RequestHeader(value = "X-User-Id", required = false) String userId) {
+        return ResponseEntity.ok(gamingService.getRecommendations(UserContext.resolveUserId(userId)));
     }
 
     @PostMapping("/journal")
     public ResponseEntity<TrackedGame> updateTrackedGame(
-            @RequestHeader("X-User-Id") String userId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestBody UpdateTrackedGameRequest request) {
         return ResponseEntity.ok(gamingService.updateTrackedGame(
-                userId, request.getAppId(), request.getName(), request.getStatus(), request.getRating(), request.getGeneralComments()));
+                UserContext.resolveUserId(userId), request.getAppId(), request.getName(), request.getStatus(), request.getRating(), request.getGeneralComments()));
     }
 
     @GetMapping("/journal")
-    public ResponseEntity<List<TrackedGame>> getTrackedGames(@RequestHeader("X-User-Id") String userId) {
-        return ResponseEntity.ok(gamingService.getTrackedGames(userId));
+    public ResponseEntity<List<TrackedGame>> getTrackedGames(@RequestHeader(value = "X-User-Id", required = false) String userId) {
+        return ResponseEntity.ok(gamingService.getTrackedGames(UserContext.resolveUserId(userId)));
     }
 
     @DeleteMapping("/journal/{appId}")
     public ResponseEntity<Void> deleteTrackedGame(
-            @RequestHeader("X-User-Id") String userId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable Long appId) {
-        gamingService.deleteTrackedGame(userId, appId);
+        gamingService.deleteTrackedGame(UserContext.resolveUserId(userId), appId);
         return ResponseEntity.noContent().build();
     }
 
@@ -81,14 +82,14 @@ public class SteamGamingController {
 
     @PutMapping("/queue/{appId}")
     public ResponseEntity<TrackedGame> updateQueue(
-            @RequestHeader("X-User-Id") String userId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable Long appId,
             @RequestParam Integer priority) {
-        return ResponseEntity.ok(gamingService.updateQueuePriority(userId, appId, priority));
+        return ResponseEntity.ok(gamingService.updateQueuePriority(UserContext.resolveUserId(userId), appId, priority));
     }
 
     @GetMapping("/queue")
-    public ResponseEntity<List<TrackedGame>> getQueue(@RequestHeader("X-User-Id") String userId) {
-        return ResponseEntity.ok(gamingService.getQueue(userId));
+    public ResponseEntity<List<TrackedGame>> getQueue(@RequestHeader(value = "X-User-Id", required = false) String userId) {
+        return ResponseEntity.ok(gamingService.getQueue(UserContext.resolveUserId(userId)));
     }
 }

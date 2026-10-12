@@ -1,5 +1,6 @@
 package com.lifeos.modules.finance.controller;
 
+import com.lifeos.core.security.UserContext;
 import com.lifeos.modules.finance.dto.SubscriptionDto;
 import com.lifeos.modules.finance.dto.SubscriptionRequest;
 import com.lifeos.modules.finance.service.FinanceService;
@@ -21,28 +22,28 @@ public class FinanceController {
     @GetMapping("/subscriptions")
     public ResponseEntity<List<SubscriptionDto>> getSubscriptions(
             @RequestHeader(value = "X-User-Id", required = false) String userId) {
-        return ResponseEntity.ok(financeService.getUserSubscriptions(userId));
+        return ResponseEntity.ok(financeService.getUserSubscriptions(UserContext.resolveUserId(userId)));
     }
 
     @PostMapping("/subscriptions")
     public ResponseEntity<SubscriptionDto> addSubscription(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @Valid @RequestBody SubscriptionRequest subscription) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(financeService.addSubscription(userId, subscription));
+        return ResponseEntity.status(HttpStatus.CREATED).body(financeService.addSubscription(UserContext.resolveUserId(userId), subscription));
     }
 
     @PostMapping("/subscriptions/{id}/pay")
     public ResponseEntity<SubscriptionDto> markAsPaid(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable String id) {
-        return ResponseEntity.ok(financeService.markAsPaid(userId, id));
+        return ResponseEntity.ok(financeService.markAsPaid(UserContext.resolveUserId(userId), id));
     }
 
     @DeleteMapping("/subscriptions/{id}")
     public ResponseEntity<Void> deleteSubscription(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable String id) {
-        financeService.deleteSubscription(userId, id);
+        financeService.deleteSubscription(UserContext.resolveUserId(userId), id);
         return ResponseEntity.noContent().build();
     }
 
@@ -51,6 +52,6 @@ public class FinanceController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable String id,
             @Valid @RequestBody SubscriptionRequest subscription) {
-        return ResponseEntity.ok(financeService.updateSubscription(userId, id, subscription));
+        return ResponseEntity.ok(financeService.updateSubscription(UserContext.resolveUserId(userId), id, subscription));
     }
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/lib/authStore";
+import { extractUserIdFromToken } from "@/lib/jwtUtils";
 import Cookies from "js-cookie";
 import { Loader2 } from "lucide-react";
 
@@ -13,7 +14,7 @@ export default function ProtectedRoute({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { token, logout } = useAuthStore();
+  const { token, userId, setAuth, logout } = useAuthStore();
   const [isVerifying, setIsVerifying] = useState(true);
 
   useEffect(() => {
@@ -33,8 +34,15 @@ export default function ProtectedRoute({
       return;
     }
 
+    if (cookieToken && (!token || !userId || userId === "user" || userId === "undefined")) {
+      const extracted = extractUserIdFromToken(cookieToken);
+      if (extracted) {
+        setAuth(cookieToken, extracted);
+      }
+    }
+
     setTimeout(() => setIsVerifying(false), 0);
-  }, [token, pathname, router, logout]);
+  }, [token, userId, pathname, router, logout, setAuth]);
 
   if (isVerifying && pathname !== "/login" && pathname !== "/auth/callback") {
     return (

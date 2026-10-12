@@ -20,11 +20,8 @@ public class NotificationController {
     private final NotificationService notificationService;
 
     private String resolveUserId(String headerUserId) {
-        if (headerUserId != null && !headerUserId.isBlank()) {
-            return headerUserId;
-        }
-        String contextUser = UserContext.getUserId();
-        return (contextUser != null && !contextUser.isBlank()) ? contextUser : "unknown";
+        String resolved = UserContext.resolveUserId(headerUserId);
+        return (resolved != null && !resolved.isBlank()) ? resolved : "unknown";
     }
 
     @GetMapping

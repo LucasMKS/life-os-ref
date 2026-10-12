@@ -1,6 +1,7 @@
 package com.lifeos.modules.sports.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.lifeos.core.security.UserContext;
 import com.lifeos.modules.sports.dto.*;
 import com.lifeos.modules.sports.model.UserTrackedSportsLeague;
 import com.lifeos.modules.sports.model.UserTrackedSportsTeam;
@@ -80,7 +81,7 @@ public class SportsController {
     public ResponseEntity<List<SportMatchDTO>> getFollowedMatches(
             @RequestHeader(value = "X-User-Id", defaultValue = "default") String userId,
             @RequestParam(value = "date", required = false) String date) {
-        return ResponseEntity.ok(sportsService.getFollowedMatches(userId, date));
+        return ResponseEntity.ok(sportsService.getFollowedMatches(UserContext.resolveUserId(userId), date));
     }
 
     /**
@@ -100,7 +101,7 @@ public class SportsController {
     public ResponseEntity<List<SportMatchDTO>> getRadarMatches(
             @RequestHeader(value = "X-User-Id", defaultValue = "default") String userId,
             @RequestParam(value = "days", required = false, defaultValue = "14") Integer days) {
-        return ResponseEntity.ok(sportsService.getRadarMatches(userId, days));
+        return ResponseEntity.ok(sportsService.getRadarMatches(UserContext.resolveUserId(userId), days));
     }
 
     /**
@@ -109,7 +110,7 @@ public class SportsController {
     @GetMapping("/preferences")
     public ResponseEntity<SportsUserPreferencesDTO> getUserPreferences(
             @RequestHeader(value = "X-User-Id", defaultValue = "default") String userId) {
-        return ResponseEntity.ok(sportsService.getUserPreferences(userId));
+        return ResponseEntity.ok(sportsService.getUserPreferences(UserContext.resolveUserId(userId)));
     }
 
     /**
@@ -119,7 +120,7 @@ public class SportsController {
     public ResponseEntity<UserTrackedSportsTeam> trackTeam(
             @RequestHeader(value = "X-User-Id", defaultValue = "default") String userId,
             @Valid @RequestBody TrackTeamRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(sportsService.trackTeam(userId, request));
+        return ResponseEntity.status(HttpStatus.CREATED).body(sportsService.trackTeam(UserContext.resolveUserId(userId), request));
     }
 
     /**
@@ -130,7 +131,7 @@ public class SportsController {
             @RequestHeader(value = "X-User-Id", defaultValue = "default") String userId,
             @PathVariable String teamId,
             @RequestParam(value = "sport", required = false) String sport) {
-        sportsService.untrackTeam(userId, teamId, sport);
+        sportsService.untrackTeam(UserContext.resolveUserId(userId), teamId, sport);
         return ResponseEntity.noContent().build();
     }
 
@@ -141,7 +142,7 @@ public class SportsController {
     public ResponseEntity<UserTrackedSportsLeague> trackLeague(
             @RequestHeader(value = "X-User-Id", defaultValue = "default") String userId,
             @Valid @RequestBody TrackLeagueRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(sportsService.trackLeague(userId, request));
+        return ResponseEntity.status(HttpStatus.CREATED).body(sportsService.trackLeague(UserContext.resolveUserId(userId), request));
     }
 
     /**
@@ -151,7 +152,7 @@ public class SportsController {
     public ResponseEntity<Void> untrackLeague(
             @RequestHeader(value = "X-User-Id", defaultValue = "default") String userId,
             @PathVariable String league) {
-        sportsService.untrackLeague(userId, league);
+        sportsService.untrackLeague(UserContext.resolveUserId(userId), league);
         return ResponseEntity.noContent().build();
     }
 

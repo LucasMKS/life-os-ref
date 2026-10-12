@@ -1,5 +1,6 @@
 package com.lifeos.modules.notes.controller;
 
+import com.lifeos.core.security.UserContext;
 import com.lifeos.modules.notes.dto.QuickNoteDto;
 import com.lifeos.modules.notes.model.QuickNote;
 import com.lifeos.modules.notes.service.QuickNoteService;
@@ -22,7 +23,7 @@ public class QuickNoteController {
     @GetMapping
     public ResponseEntity<List<QuickNoteDto>> getNotes(
             @RequestHeader(value = "X-User-Id", required = false) String userId) {
-        return ResponseEntity.ok(quickNoteService.getNotes(userId).stream()
+        return ResponseEntity.ok(quickNoteService.getNotes(UserContext.resolveUserId(userId)).stream()
                 .map(QuickNoteDto::from)
                 .toList());
     }
@@ -43,7 +44,7 @@ public class QuickNoteController {
         note.setImageUrl(imageUrl);
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(QuickNoteDto.from(quickNoteService.createNoteWithImage(userId, note, file)));
+                .body(QuickNoteDto.from(quickNoteService.createNoteWithImage(UserContext.resolveUserId(userId), note, file)));
     }
 
     @PutMapping("/{id}")
@@ -51,14 +52,14 @@ public class QuickNoteController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable String id,
             @RequestBody QuickNote updatedData) {
-        return ResponseEntity.ok(QuickNoteDto.from(quickNoteService.updateNote(userId, id, updatedData)));
+        return ResponseEntity.ok(QuickNoteDto.from(quickNoteService.updateNote(UserContext.resolveUserId(userId), id, updatedData)));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteNote(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @PathVariable String id) {
-        quickNoteService.deleteNote(userId, id);
+        quickNoteService.deleteNote(UserContext.resolveUserId(userId), id);
         return ResponseEntity.noContent().build();
     }
 }

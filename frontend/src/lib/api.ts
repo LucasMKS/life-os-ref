@@ -1,5 +1,7 @@
 import axios from "axios";
+import Cookies from "js-cookie";
 import { useAuthStore } from "./authStore";
+import { extractUserIdFromToken } from "./jwtUtils";
 import { toast } from "sonner";
 import {
   AuthDTO,
@@ -34,7 +36,19 @@ export const ratingApi = axios.create({
 });
 
 const requestInterceptor = (config: any) => {
-  const { token, userId } = useAuthStore.getState();
+  let { token, userId } = useAuthStore.getState();
+
+  if (!token && typeof window !== "undefined") {
+    token = Cookies.get("auth_token") || null;
+  }
+
+  if (token && (!userId || userId === "user" || userId === "undefined")) {
+    const extracted = extractUserIdFromToken(token);
+    if (extracted) {
+      userId = extracted;
+      useAuthStore.getState().setAuth(token, userId);
+    }
+  }
 
   if (token) config.headers.Authorization = `Bearer ${token}`;
   if (userId) config.headers["X-User-Id"] = userId;
@@ -43,7 +57,10 @@ const requestInterceptor = (config: any) => {
 };
 
 const externalRatingInterceptor = (config: any) => {
-  const { token } = useAuthStore.getState();
+  let { token } = useAuthStore.getState();
+  if (!token && typeof window !== "undefined") {
+    token = Cookies.get("auth_token") || null;
+  }
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 };
