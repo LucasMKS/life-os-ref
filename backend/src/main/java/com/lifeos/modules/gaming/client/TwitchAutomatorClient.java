@@ -7,9 +7,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Slf4j
 @Component
@@ -26,15 +26,17 @@ public class TwitchAutomatorClient {
     public Map<String, Object> getStatus() {
         try {
             String response = webClient.get()
-                    .uri("/api/v0/status")
+                    .uri("/api/v0/about")
                     .retrieve()
                     .bodyToMono(String.class)
                     .block();
             if (response != null) {
-                return objectMapper.readValue(response, new TypeReference<Map<String, Object>>() {});
+                Map<String, Object> result = objectMapper.readValue(response, new TypeReference<Map<String, Object>>() {});
+                result.put("online", true);
+                return result;
             }
         } catch (Exception e) {
-            log.warn("TwitchAutomator não respondeu ao status: {}", e.getMessage());
+            log.warn("TwitchAutomator não respondeu ao status (/api/v0/about): {}", e.getMessage());
         }
         return Map.of("online", false, "message", "Gravador offline ou indisponível");
     }
@@ -47,9 +49,11 @@ public class TwitchAutomatorClient {
                     .bodyToMono(String.class)
                     .block();
             if (response != null) {
-                JsonNode node = objectMapper.readTree(response);
-                if (node.has("data") && node.get("data").isArray()) {
-                    return objectMapper.convertValue(node.get("data"), new TypeReference<List<Map<String, Object>>>() {});
+                JsonNode root = objectMapper.readTree(response);
+                JsonNode data = root.path("data");
+                JsonNode streamerList = data.has("streamer_list") ? data.path("streamer_list") : data;
+                if (streamerList.isArray()) {
+                    return objectMapper.convertValue(streamerList, new TypeReference<List<Map<String, Object>>>() {});
                 }
             }
         } catch (Exception e) {
@@ -59,56 +63,104 @@ public class TwitchAutomatorClient {
     }
 
     public boolean addChannel(String login, String quality) {
+        String cleanLogin = login.toLowerCase().trim();
         try {
             String q = (quality != null && !quality.isBlank()) ? quality : "720p60";
-            Map<String, Object> payload = Map.of(
-                    "login", login.toLowerCase().trim(),
-                    "quality", List.of(q, "best")
-            );
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("provider", "twitch");
+            payload.put("internalName", cleanLogin);
+            payload.put("quality", List.of(q, "best"));
+            payload.put("match", List.of());
+            payload.put("download_chat", false);
+            payload.put("burn_chat", false);
+            payload.put("no_capture", false);
+            payload.put("live_chat", false);
+            payload.put("no_cleanup", false);
+            payload.put("max_storage", 0);
+            payload.put("max_vods", 0);
+            payload.put("download_vod_at_end", false);
+            payload.put("download_vod_at_end_quality", "best");
+
             webClient.post()
                     .uri("/api/v0/channels")
                     .bodyValue(payload)
                     .retrieve()
                     .bodyToMono(String.class)
                     .block();
-            log.info("Canal {} cadastrado para gravação no TwitchAutomator com qualidade {}", login, q);
+
+            log.info("Canal {} cadastrado com sucesso no TwitchAutomator (qualidade={})", cleanLogin, q);
             return true;
+        } catch (WebClientResponseException e) {
+            log.error("Erro na API do TwitchAutomator ao cadastrar canal {}: Status {} - Resposta: {}",
+                    cleanLogin, e.getStatusCode(), e.getResponseBodyAsString());
+            return false;
         } catch (Exception e) {
-            log.error("Erro ao cadastrar canal {} no TwitchAutomator: {}", login, e.getMessage());
+            log.error("Erro inesperado ao cadastrar canal {} no TwitchAutomator: {}", cleanLogin, e.getMessage());
             return false;
         }
     }
 
     public boolean deleteChannel(String login) {
+        String cleanLogin = login.toLowerCase().trim();
         try {
+            // LiveStreamDVR usa /api/v0/channels/:uuid para exclusão
+            List<Map<String, Object>> channels = getChannels();
+            String uuidToDelete = null;
+
+            for (Map<String, Object> ch : channels) {
+                String chName = String.valueOf(ch.getOrDefault("internalName", ch.getOrDefault("login", ""))).toLowerCase().trim();
+                if (cleanLogin.equalsIgnoreCase(chName)) {
+                    uuidToDelete = String.valueOf(ch.get("uuid"));
+                    break;
+                }
+            }
+
+            String target = (uuidToDelete != null && !uuidToDelete.isBlank()) ? uuidToDelete : cleanLogin;
+
             webClient.delete()
-                    .uri("/api/v0/channels/{login}", login.toLowerCase().trim())
+                    .uri("/api/v0/channels/{uuid}", target)
                     .retrieve()
                     .bodyToMono(Void.class)
                     .block();
-            log.info("Canal {} removido do TwitchAutomator", login);
+
+            log.info("Canal {} (uuid={}) removido do TwitchAutomator", cleanLogin, target);
             return true;
+        } catch (WebClientResponseException e) {
+            log.warn("Erro ao remover canal {} do TwitchAutomator: Status {} - Resposta: {}",
+                    cleanLogin, e.getStatusCode(), e.getResponseBodyAsString());
+            return false;
         } catch (Exception e) {
-            log.error("Erro ao remover canal {} do TwitchAutomator: {}", login, e.getMessage());
+            log.error("Erro inesperado ao remover canal {} do TwitchAutomator: {}", cleanLogin, e.getMessage());
             return false;
         }
     }
 
     public List<Map<String, Object>> getVods() {
         try {
-            String response = webClient.get()
-                    .uri("/api/v0/vods")
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-            if (response != null) {
-                JsonNode node = objectMapper.readTree(response);
-                if (node.has("data") && node.get("data").isArray()) {
-                    return objectMapper.convertValue(node.get("data"), new TypeReference<List<Map<String, Object>>>() {});
+            // No LiveStreamDVR os VODs ficam agregados dentro de cada streamer em /api/v0/channels
+            List<Map<String, Object>> channels = getChannels();
+            List<Map<String, Object>> allVods = new ArrayList<>();
+
+            for (Map<String, Object> ch : channels) {
+                Object vodsObj = ch.get("vods_list");
+                String streamerName = String.valueOf(ch.getOrDefault("displayName", ch.getOrDefault("internalName", "")));
+
+                if (vodsObj instanceof List<?> vodList) {
+                    for (Object v : vodList) {
+                        if (v instanceof Map<?, ?> vodMap) {
+                            Map<String, Object> normalized = new HashMap<>();
+                            vodMap.forEach((k, val) -> normalized.put(String.valueOf(k), val));
+                            normalized.putIfAbsent("channel_name", streamerName);
+                            allVods.add(normalized);
+                        }
+                    }
                 }
             }
+
+            return allVods;
         } catch (Exception e) {
-            log.warn("Erro ao buscar VODs do TwitchAutomator: {}", e.getMessage());
+            log.warn("Erro ao processar VODs do TwitchAutomator: {}", e.getMessage());
         }
         return List.of();
     }
