@@ -7,6 +7,7 @@ import com.lifeos.modules.gaming.dto.CreateTrackedTwitchRequest;
 import com.lifeos.modules.gaming.dto.TwitchStreamDTO;
 import com.lifeos.modules.gaming.model.UserTrackedTwitchChannel;
 import com.lifeos.modules.gaming.repository.UserTrackedTwitchChannelRepository;
+import com.lifeos.modules.gaming.client.TwitchAutomatorClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -52,6 +53,7 @@ public class TwitchService {
     private final UserTrackedTwitchChannelRepository trackedTwitchRepository;
     private final StringRedisTemplate redisTemplate;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
+    private final TwitchAutomatorClient twitchAutomatorClient;
 
     @Value("${twitch.client-id}")
     private String clientId;
@@ -239,8 +241,20 @@ public class TwitchService {
             throw new IllegalArgumentException("Você já está monitorando este canal.");
         }
 
+        boolean record = Boolean.TRUE.equals(request.recordVod());
+        String quality = (request.recordQuality() != null && !request.recordQuality().isBlank()) ? request.recordQuality() : "720p60";
+
         UserTrackedTwitchChannel saved = trackedTwitchRepository.save(
-                UserTrackedTwitchChannel.builder().userId(userId).channelName(cleanChannelName).build());
+                UserTrackedTwitchChannel.builder()
+                        .userId(userId)
+                        .channelName(cleanChannelName)
+                        .recordVod(record)
+                        .recordQuality(quality)
+                        .build());
+
+        if (record) {
+            twitchAutomatorClient.addChannel(cleanChannelName, quality);
+        }
 
         fetchLiveChannelsFromTwitch();
         return saved;
@@ -249,8 +263,43 @@ public class TwitchService {
     public void deleteTrackedChannel(String userId, String trackedChannelId) {
         UserTrackedTwitchChannel trackedChannel = trackedTwitchRepository.findByIdAndUserId(trackedChannelId, userId)
                 .orElseThrow(() -> new NoSuchElementException("Canal não encontrado: " + trackedChannelId));
-        trackedTwitchRepository.delete(trackedChannel);
 
+        if (trackedChannel.isRecordVod()) {
+            twitchAutomatorClient.deleteChannel(trackedChannel.getChannelName());
+        }
+
+        trackedTwitchRepository.delete(trackedChannel);
         fetchLiveChannelsFromTwitch();
+    }
+
+    public UserTrackedTwitchChannel updateTrackedChannelRecording(String userId, String trackedChannelId, boolean recordVod, String quality) {
+        UserTrackedTwitchChannel channel = trackedTwitchRepository.findByIdAndUserId(trackedChannelId, userId)
+                .orElseThrow(() -> new NoSuchElementException("Canal não encontrado: " + trackedChannelId));
+
+        String q = (quality != null && !quality.isBlank()) ? quality : channel.getRecordQuality();
+        channel.setRecordVod(recordVod);
+        channel.setRecordQuality(q);
+
+        UserTrackedTwitchChannel saved = trackedTwitchRepository.save(channel);
+
+        if (recordVod) {
+            twitchAutomatorClient.addChannel(channel.getChannelName(), q);
+        } else {
+            twitchAutomatorClient.deleteChannel(channel.getChannelName());
+        }
+
+        return saved;
+    }
+
+    public Map<String, Object> getDvrStatus() {
+        return twitchAutomatorClient.getStatus();
+    }
+
+    public List<Map<String, Object>> getDvrChannels() {
+        return twitchAutomatorClient.getChannels();
+    }
+
+    public List<Map<String, Object>> getDvrVods() {
+        return twitchAutomatorClient.getVods();
     }
 }

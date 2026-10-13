@@ -14,11 +14,7 @@ import {
 import { Twitch } from "./twitch-icon";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
-
-interface TrackedTwitchChannel {
-  id: string;
-  channelName: string;
-}
+import { TrackedTwitchChannel } from "@/lib/types";
 
 interface TwitchWidgetProps {
   showManagement?: boolean;
@@ -27,6 +23,8 @@ interface TwitchWidgetProps {
 export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
   const queryClient = useQueryClient();
   const [twitchChannelInput, setTwitchChannelInput] = useState("");
+  const [recordVodInput, setRecordVodInput] = useState(false);
+  const [recordQualityInput, setRecordQualityInput] = useState("720p60");
   const [activeEmbedChannel, setActiveEmbedChannel] = useState<string | null>(null);
 
   const { data: liveStreams = [], isLoading } = useQuery({
@@ -47,7 +45,9 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["twitch-preferences"] });
       queryClient.invalidateQueries({ queryKey: ["twitch-live-streams"] });
+      queryClient.invalidateQueries({ queryKey: ["twitch-dvr-channels"] });
       setTwitchChannelInput("");
+      setRecordVodInput(false);
       toast.success("Canal adicionado com sucesso!");
     },
     onError: (error: any) => {
@@ -60,14 +60,36 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["twitch-preferences"] });
       queryClient.invalidateQueries({ queryKey: ["twitch-live-streams"] });
+      queryClient.invalidateQueries({ queryKey: ["twitch-dvr-channels"] });
       toast.success("Canal removido.");
+    },
+  });
+
+  const toggleRecordMutation = useMutation({
+    mutationFn: (payload: { id: string; recordVod: boolean; recordQuality?: string }) =>
+      gamingApi.toggleTrackedTwitchRecord(payload),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["twitch-preferences"] });
+      queryClient.invalidateQueries({ queryKey: ["twitch-dvr-channels"] });
+      if (variables.recordVod) {
+        toast.success("Gravação automática (DVR) ativada!");
+      } else {
+        toast.info("Gravação desativada.");
+      }
+    },
+    onError: () => {
+      toast.error("Erro ao alterar status de gravação.");
     },
   });
 
   const handleAddTwitchChannel = (e: React.FormEvent) => {
     e.preventDefault();
     if (twitchChannelInput.trim().length < 2) return;
-    addTwitchChannelMutation.mutate({ channelName: twitchChannelInput.trim() });
+    addTwitchChannelMutation.mutate({
+      channelName: twitchChannelInput.trim(),
+      recordVod: recordVodInput,
+      recordQuality: recordQualityInput,
+    });
   };
 
   if (isLoading) {
@@ -95,32 +117,61 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
           <div className="flex flex-col gap-5 md:gap-6 relative z-10">
             <form
               onSubmit={handleAddTwitchChannel}
-              className="flex gap-2 md:gap-3"
+              className="flex flex-col gap-2.5"
             >
-              <div className="relative flex-1">
-                <MonitorPlay className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-                <input
-                  type="text"
-                  value={twitchChannelInput}
-                  onChange={(e) => setTwitchChannelInput(e.target.value)}
-                  placeholder="Usuário (ex: alanzoka)"
-                  className="w-full bg-black/40 border border-white/10 rounded-2xl pl-11 pr-4 py-3 md:py-3.5 text-sm text-zinc-200 focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all placeholder:text-zinc-600"
-                />
+              <div className="flex gap-2 md:gap-3">
+                <div className="relative flex-1">
+                  <MonitorPlay className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                  <input
+                    type="text"
+                    value={twitchChannelInput}
+                    onChange={(e) => setTwitchChannelInput(e.target.value)}
+                    placeholder="Usuário (ex: alanzoka)"
+                    className="w-full bg-black/40 border border-white/10 rounded-2xl pl-11 pr-4 py-3 md:py-3.5 text-sm text-zinc-200 focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all placeholder:text-zinc-600"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={
+                    addTwitchChannelMutation.isPending ||
+                    twitchChannelInput.trim().length < 2
+                  }
+                  className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 md:px-5 rounded-2xl font-medium transition-colors flex items-center justify-center shadow-[0_0_20px_rgba(147,51,234,0.3)]"
+                >
+                  {addTwitchChannelMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4 md:w-4 md:h-4" />
+                  )}
+                </button>
               </div>
-              <button
-                type="submit"
-                disabled={
-                  addTwitchChannelMutation.isPending ||
-                  twitchChannelInput.trim().length < 2
-                }
-                className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 md:px-5 rounded-2xl font-medium transition-colors flex items-center justify-center shadow-[0_0_20px_rgba(147,51,234,0.3)]"
-              >
-                {addTwitchChannelMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4 md:w-4 md:h-4" />
+
+              <div className="flex flex-wrap items-center gap-3 px-1 text-xs text-zinc-400">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={recordVodInput}
+                    onChange={(e) => setRecordVodInput(e.target.checked)}
+                    className="rounded border-zinc-700 bg-black/50 text-purple-600 focus:ring-purple-500 accent-purple-600"
+                  />
+                  <span>Gravar lives automaticamente (DVR)</span>
+                </label>
+                {recordVodInput && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-zinc-500">Qualidade:</span>
+                    <select
+                      value={recordQualityInput}
+                      onChange={(e) => setRecordQualityInput(e.target.value)}
+                      className="bg-black/60 border border-white/10 rounded-lg text-[11px] text-zinc-300 px-2 py-0.5 focus:outline-none focus:border-purple-500"
+                    >
+                      <option value="720p60">720p60 (Recomendado)</option>
+                      <option value="720p">720p</option>
+                      <option value="1080p60">1080p60</option>
+                      <option value="best">Melhor</option>
+                    </select>
+                  </div>
                 )}
-              </button>
+              </div>
             </form>
 
             <div className="bg-black/20 border border-white/5 rounded-2xl p-4 md:p-5">
@@ -139,7 +190,39 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
                       key={channel.id}
                       className="inline-flex items-center gap-1.5 md:gap-2 text-[11px] md:text-xs font-medium text-zinc-200 bg-purple-500/10 border border-purple-500/20 rounded-lg pl-2.5 pr-1 py-1 md:pl-3 md:pr-1.5 md:py-1.5 shadow-sm"
                     >
-                      {channel.channelName}
+                      <span>{channel.channelName}</span>
+
+                      {/* Botão Toggle REC */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          toggleRecordMutation.mutate({
+                            id: channel.id,
+                            recordVod: !channel.recordVod,
+                            recordQuality: channel.recordQuality || "720p60",
+                          })
+                        }
+                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
+                          channel.recordVod
+                            ? "bg-red-500/20 text-red-400 border border-red-500/30 shadow-[0_0_8px_rgba(239,68,68,0.2)]"
+                            : "bg-white/5 text-zinc-500 hover:text-zinc-300 hover:bg-white/10"
+                        }`}
+                        title={
+                          channel.recordVod
+                            ? `Gravação ativada (${channel.recordQuality || "720p60"}). Clique para desligar.`
+                            : "Gravação desativada. Clique para ativar gravação automática."
+                        }
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            channel.recordVod
+                              ? "bg-red-500 animate-pulse"
+                              : "bg-zinc-600"
+                          }`}
+                        />
+                        REC
+                      </button>
+
                       <button
                         onClick={() =>
                           removeTwitchChannelMutation.mutate(channel.id)

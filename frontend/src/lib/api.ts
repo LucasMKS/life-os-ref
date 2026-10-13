@@ -394,12 +394,31 @@ export const gamingApi = {
     const response = await api.get("/gaming/twitch/preferences");
     return response.data;
   },
-  addTrackedTwitchChannel: async (payload: { channelName: string }) => {
+  addTrackedTwitchChannel: async (payload: { channelName: string; recordVod?: boolean; recordQuality?: string }) => {
     const response = await api.post("/gaming/twitch/preferences", payload);
     return response.data;
   },
   deleteTrackedTwitchChannel: async (id: string) => {
     const response = await api.delete(`/gaming/twitch/preferences/${id}`);
+    return response.data;
+  },
+  toggleTrackedTwitchRecord: async (payload: { id: string; recordVod: boolean; recordQuality?: string }) => {
+    const response = await api.patch(`/gaming/twitch/preferences/${payload.id}/record`, {
+      recordVod: payload.recordVod,
+      recordQuality: payload.recordQuality || "720p60",
+    });
+    return response.data;
+  },
+  getTwitchDvrStatus: async () => {
+    const response = await api.get("/gaming/twitch/dvr/status");
+    return response.data;
+  },
+  getTwitchDvrChannels: async () => {
+    const response = await api.get("/gaming/twitch/dvr/channels");
+    return response.data;
+  },
+  getTwitchDvrVods: async () => {
+    const response = await api.get("/gaming/twitch/dvr/vods");
     return response.data;
   },
 

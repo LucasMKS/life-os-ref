@@ -62,6 +62,8 @@ app:
   bot-user-id: ${BOT_USER_ID:}
   lmsfavorite-url: ${LMSFAVORITE_URL:http://lmsfavorite:8083}
   lmsrating-url: ${LMSRATING_URL:http://lmsrating:8082}
+  twitch-automator:
+    url: ${TWITCH_AUTOMATOR_URL:http://twitchautomator:8082}
 
   api-keys:
     steam: ${STEAM_API_KEY:}

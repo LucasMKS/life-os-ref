@@ -673,5 +673,32 @@ export interface MatchSummary {
   leaders?: MatchTeamLeaders[];
 }
 
+export interface TrackedTwitchChannel {
+  id: string;
+  channelName: string;
+  recordVod?: boolean;
+  recordQuality?: string;
+}
 
+export interface TwitchDvrStatus {
+  online?: boolean;
+  message?: string;
+  data?: any;
+  [key: string]: any;
+}
 
+export interface TwitchDvrVod {
+  stream_id?: string;
+  channel_name?: string;
+  streamer_name?: string;
+  title?: string;
+  started_at?: string;
+  ended_at?: string;
+  duration?: number;
+  total_size?: number;
+  segments_raw_size?: number;
+  is_recording?: boolean;
+  is_converting?: boolean;
+  basename?: string;
+  [key: string]: any;
+}

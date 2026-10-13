@@ -22,4 +22,12 @@ public class UserTrackedTwitchChannel {
 
     @Column(nullable = false)
     private String channelName;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean recordVod = false;
+
+    @Column(length = 30)
+    @Builder.Default
+    private String recordQuality = "720p60";
 }

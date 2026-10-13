@@ -4,6 +4,7 @@ import com.lifeos.modules.gaming.dto.CreateTrackedTwitchRequest;
 import com.lifeos.modules.gaming.dto.TwitchStreamDTO;
 import com.lifeos.modules.gaming.model.UserTrackedTwitchChannel;
 import com.lifeos.modules.gaming.service.TwitchService;
+import com.lifeos.modules.gaming.dto.UpdateTwitchRecordRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -11,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/gaming/twitch")
@@ -38,11 +40,35 @@ public class TwitchController {
         return ResponseEntity.status(HttpStatus.CREATED).body(twitchService.createTrackedChannel(userId, request));
     }
 
+    @PatchMapping("/preferences/{id}/record")
+    public ResponseEntity<UserTrackedTwitchChannel> updateRecording(
+            @RequestHeader("X-User-Id") String userId,
+            @PathVariable String id,
+            @RequestBody UpdateTwitchRecordRequest request) {
+        return ResponseEntity.ok(twitchService.updateTrackedChannelRecording(
+                userId, id, request.recordVod(), request.recordQuality()));
+    }
+
     @DeleteMapping("/preferences/{id}")
     public ResponseEntity<Void> deleteTrackedChannel(
             @RequestHeader("X-User-Id") String userId,
             @PathVariable String id) {
         twitchService.deleteTrackedChannel(userId, id);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/dvr/status")
+    public ResponseEntity<Map<String, Object>> getDvrStatus() {
+        return ResponseEntity.ok(twitchService.getDvrStatus());
+    }
+
+    @GetMapping("/dvr/channels")
+    public ResponseEntity<List<Map<String, Object>>> getDvrChannels() {
+        return ResponseEntity.ok(twitchService.getDvrChannels());
+    }
+
+    @GetMapping("/dvr/vods")
+    public ResponseEntity<List<Map<String, Object>>> getDvrVods() {
+        return ResponseEntity.ok(twitchService.getDvrVods());
     }
 }
