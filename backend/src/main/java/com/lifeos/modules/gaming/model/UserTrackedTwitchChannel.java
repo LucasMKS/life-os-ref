@@ -23,11 +23,15 @@ public class UserTrackedTwitchChannel {
     @Column(nullable = false)
     private String channelName;
 
-    @Column(nullable = false)
+    @Column(name = "record_vod", nullable = false, columnDefinition = "boolean default false")
     @Builder.Default
-    private boolean recordVod = false;
+    private Boolean recordVod = false;
 
-    @Column(length = 30)
+    @Column(name = "record_quality", length = 30, columnDefinition = "varchar(30) default '720p60'")
     @Builder.Default
     private String recordQuality = "720p60";
+
+    public boolean isRecordVod() {
+        return Boolean.TRUE.equals(this.recordVod);
+    }
 }

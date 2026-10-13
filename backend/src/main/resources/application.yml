@@ -63,7 +63,7 @@ app:
   lmsfavorite-url: ${LMSFAVORITE_URL:http://lmsfavorite:8083}
   lmsrating-url: ${LMSRATING_URL:http://lmsrating:8082}
   twitch-automator:
-    url: ${TWITCH_AUTOMATOR_URL:http://twitchautomator:8082}
+    url: ${TWITCH_AUTOMATOR_URL:http://twitchautomator:8080}
 
   api-keys:
     steam: ${STEAM_API_KEY:}

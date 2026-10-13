@@ -91,7 +91,7 @@ public class WebClientConfig implements WebMvcConfigurer {
     }
 
     @Bean
-    public WebClient twitchAutomatorWebClient(@Value("${app.twitch-automator.url:http://twitchautomator:8082}") String baseUrl) {
+    public WebClient twitchAutomatorWebClient(@Value("${app.twitch-automator.url:http://twitchautomator:8080}") String baseUrl) {
         return timeoutBuilder()
                 .baseUrl(baseUrl)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, org.springframework.http.MediaType.APPLICATION_JSON_VALUE)
