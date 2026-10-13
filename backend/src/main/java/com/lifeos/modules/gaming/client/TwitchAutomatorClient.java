@@ -67,10 +67,17 @@ public class TwitchAutomatorClient {
         try {
             String q = (quality != null && !quality.isBlank()) ? quality : "720p60";
 
+            List<String> qualityList;
+            if ("best".equalsIgnoreCase(q)) {
+                qualityList = List.of("best");
+            } else {
+                qualityList = List.of(q, "best");
+            }
+
             Map<String, Object> payload = new HashMap<>();
             payload.put("provider", "twitch");
             payload.put("internalName", cleanLogin);
-            payload.put("quality", List.of(q, "best"));
+            payload.put("quality", qualityList);
             payload.put("match", List.of());
             payload.put("download_chat", false);
             payload.put("burn_chat", false);
@@ -82,6 +89,33 @@ public class TwitchAutomatorClient {
             payload.put("download_vod_at_end", false);
             payload.put("download_vod_at_end_quality", "best");
 
+            // Verifica se o canal já existe no LiveStreamDVR
+            List<Map<String, Object>> existingChannels = getChannels();
+            String existingUuid = null;
+            for (Map<String, Object> ch : existingChannels) {
+                String chName = String.valueOf(ch.getOrDefault("internalName", ch.getOrDefault("login", ""))).toLowerCase().trim();
+                if (cleanLogin.equalsIgnoreCase(chName)) {
+                    Object uuidObj = ch.get("uuid");
+                    if (uuidObj != null) {
+                        existingUuid = String.valueOf(uuidObj);
+                    }
+                    break;
+                }
+            }
+
+            if (existingUuid != null && !existingUuid.isBlank() && !"null".equalsIgnoreCase(existingUuid)) {
+                log.info("Canal {} já existe no TwitchAutomator (uuid={}). Atualizando configurações (qualidade={})...", cleanLogin, existingUuid, q);
+                webClient.put()
+                        .uri("/api/v0/channels/{uuid}", existingUuid)
+                        .bodyValue(payload)
+                        .retrieve()
+                        .bodyToMono(String.class)
+                        .block();
+                log.info("Canal {} atualizado com sucesso no TwitchAutomator", cleanLogin);
+                return true;
+            }
+
+            // Se não existe, cadastra via POST
             webClient.post()
                     .uri("/api/v0/channels")
                     .bodyValue(payload)
@@ -92,8 +126,37 @@ public class TwitchAutomatorClient {
             log.info("Canal {} cadastrado com sucesso no TwitchAutomator (qualidade={})", cleanLogin, q);
             return true;
         } catch (WebClientResponseException e) {
-            log.error("Erro na API do TwitchAutomator ao cadastrar canal {}: Status {} - Resposta: {}",
-                    cleanLogin, e.getStatusCode(), e.getResponseBodyAsString());
+            String respBody = e.getResponseBodyAsString();
+            if (respBody != null && respBody.contains("already exists")) {
+                log.info("Canal {} retornou conflito de existência no TwitchAutomator. Atualizando via PUT...", cleanLogin);
+                try {
+                    List<Map<String, Object>> existingChannels = getChannels();
+                    for (Map<String, Object> ch : existingChannels) {
+                        String chName = String.valueOf(ch.getOrDefault("internalName", ch.getOrDefault("login", ""))).toLowerCase().trim();
+                        if (cleanLogin.equalsIgnoreCase(chName)) {
+                            String uuid = String.valueOf(ch.get("uuid"));
+                            Map<String, Object> updatePayload = new HashMap<>();
+                            updatePayload.put("provider", "twitch");
+                            updatePayload.put("internalName", cleanLogin);
+                            updatePayload.put("quality", "best".equalsIgnoreCase(quality) ? List.of("best") : List.of(quality, "best"));
+                            webClient.put()
+                                    .uri("/api/v0/channels/{uuid}", uuid)
+                                    .bodyValue(updatePayload)
+                                    .retrieve()
+                                    .bodyToMono(String.class)
+                                    .block();
+                            log.info("Canal {} atualizado com sucesso no TwitchAutomator via PUT após detecção de existência", cleanLogin);
+                            return true;
+                        }
+                    }
+                    return true;
+                } catch (Exception ex) {
+                    log.warn("Falha ao recuperar UUID para atualizar canal {}: {}", cleanLogin, ex.getMessage());
+                    return true;
+                }
+            }
+            log.error("Erro na API do TwitchAutomator ao cadastrar/atualizar canal {}: Status {} - Resposta: {}",
+                    cleanLogin, e.getStatusCode(), respBody);
             return false;
         } catch (Exception e) {
             log.error("Erro inesperado ao cadastrar canal {} no TwitchAutomator: {}", cleanLogin, e.getMessage());

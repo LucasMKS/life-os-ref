@@ -72,9 +72,9 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
       queryClient.invalidateQueries({ queryKey: ["twitch-preferences"] });
       queryClient.invalidateQueries({ queryKey: ["twitch-dvr-channels"] });
       if (variables.recordVod) {
-        toast.success("Gravação automática (DVR) ativada!");
+        toast.success(`Gravação DVR configurada (${variables.recordQuality || "720p60"})!`);
       } else {
-        toast.info("Gravação desativada.");
+        toast.info("Gravação desativada no DVR.");
       }
     },
     onError: () => {
@@ -164,10 +164,11 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
                       onChange={(e) => setRecordQualityInput(e.target.value)}
                       className="bg-black/60 border border-white/10 rounded-lg text-[11px] text-zinc-300 px-2 py-0.5 focus:outline-none focus:border-purple-500"
                     >
+                      <option value="1080p60">1080p60 (Full HD)</option>
                       <option value="720p60">720p60 (Recomendado)</option>
-                      <option value="720p">720p</option>
-                      <option value="1080p60">1080p60</option>
-                      <option value="best">Melhor</option>
+                      <option value="720p">720p (HD 30fps)</option>
+                      <option value="480p">480p (Econômico)</option>
+                      <option value="best">Melhor (best)</option>
                     </select>
                   </div>
                 )}
@@ -185,55 +186,99 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
                 </div>
               ) : trackedTwitchChannels && trackedTwitchChannels.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
-                  {trackedTwitchChannels.map((channel) => (
-                    <span
-                      key={channel.id}
-                      className="inline-flex items-center gap-1.5 md:gap-2 text-[11px] md:text-xs font-medium text-zinc-200 bg-purple-500/10 border border-purple-500/20 rounded-lg pl-2.5 pr-1 py-1 md:pl-3 md:pr-1.5 md:py-1.5 shadow-sm"
-                    >
-                      <span>{channel.channelName}</span>
+                  {trackedTwitchChannels.map((channel) => {
+                    const isChannelPending =
+                      toggleRecordMutation.isPending &&
+                      toggleRecordMutation.variables?.id === channel.id;
+                    const isRemovingThisChannel =
+                      removeTwitchChannelMutation.isPending &&
+                      removeTwitchChannelMutation.variables === channel.id;
+                    const isBusy = isChannelPending || isRemovingThisChannel;
 
-                      {/* Botão Toggle REC */}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          toggleRecordMutation.mutate({
-                            id: channel.id,
-                            recordVod: !channel.recordVod,
-                            recordQuality: channel.recordQuality || "720p60",
-                          })
-                        }
-                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
-                          channel.recordVod
-                            ? "bg-red-500/20 text-red-400 border border-red-500/30 shadow-[0_0_8px_rgba(239,68,68,0.2)]"
-                            : "bg-white/5 text-zinc-500 hover:text-zinc-300 hover:bg-white/10"
-                        }`}
-                        title={
-                          channel.recordVod
-                            ? `Gravação ativada (${channel.recordQuality || "720p60"}). Clique para desligar.`
-                            : "Gravação desativada. Clique para ativar gravação automática."
-                        }
+                    return (
+                      <span
+                        key={channel.id}
+                        className="inline-flex items-center gap-1.5 md:gap-2 text-[11px] md:text-xs font-medium text-zinc-200 bg-purple-500/10 border border-purple-500/20 rounded-lg pl-2.5 pr-1 py-1 md:pl-3 md:pr-1.5 md:py-1.5 shadow-sm transition-all"
                       >
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
+                        <span className="font-semibold">{channel.channelName}</span>
+
+                        {/* Botão Toggle REC */}
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() =>
+                            toggleRecordMutation.mutate({
+                              id: channel.id,
+                              recordVod: !channel.recordVod,
+                              recordQuality: channel.recordQuality || "720p60",
+                            })
+                          }
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                             channel.recordVod
-                              ? "bg-red-500 animate-pulse"
-                              : "bg-zinc-600"
+                              ? "bg-red-500/20 text-red-400 border border-red-500/30 shadow-[0_0_8px_rgba(239,68,68,0.2)]"
+                              : "bg-white/5 text-zinc-500 hover:text-zinc-300 hover:bg-white/10"
                           }`}
-                        />
-                        REC
-                      </button>
+                          title={
+                            channel.recordVod
+                              ? `Gravação ativada (${channel.recordQuality || "720p60"}). Clique para desligar.`
+                              : "Gravação desativada. Clique para ativar gravação automática."
+                          }
+                        >
+                          {isChannelPending ? (
+                            <Loader2 className="w-2.5 h-2.5 animate-spin text-zinc-300" />
+                          ) : (
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                channel.recordVod
+                                  ? "bg-red-500 animate-pulse"
+                                  : "bg-zinc-600"
+                              }`}
+                            />
+                          )}
+                          <span>REC</span>
+                        </button>
 
-                      <button
-                        onClick={() =>
-                          removeTwitchChannelMutation.mutate(channel.id)
-                        }
-                        className="p-1 text-zinc-400 hover:text-white hover:bg-red-500/80 rounded-md transition-colors"
-                        title="Parar de monitorar"
-                      >
-                        <Trash2 className="w-3 h-3 md:w-3.5 md:h-3.5" />
-                      </button>
-                    </span>
-                  ))}
+                        {/* Seletor de Qualidade por canal */}
+                        {channel.recordVod && (
+                          <select
+                            value={channel.recordQuality || "720p60"}
+                            disabled={isBusy}
+                            onChange={(e) => {
+                              const newQuality = e.target.value;
+                              toggleRecordMutation.mutate({
+                                id: channel.id,
+                                recordVod: true,
+                                recordQuality: newQuality,
+                              });
+                            }}
+                            className="bg-black/60 border border-red-500/30 text-red-300 hover:text-white text-[10px] rounded px-1.5 py-0.5 outline-none focus:border-red-400 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            title="Alterar qualidade da gravação deste canal no LiveStreamDVR"
+                          >
+                            <option value="1080p60">1080p60</option>
+                            <option value="720p60">720p60</option>
+                            <option value="720p">720p</option>
+                            <option value="480p">480p</option>
+                            <option value="best">best (máx)</option>
+                          </select>
+                        )}
+
+                        <button
+                          onClick={() =>
+                            removeTwitchChannelMutation.mutate(channel.id)
+                          }
+                          disabled={isBusy}
+                          className="p-1 text-zinc-400 hover:text-white hover:bg-red-500/80 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Parar de monitorar"
+                        >
+                          {isRemovingThisChannel ? (
+                            <Loader2 className="w-3 h-3 md:w-3.5 md:h-3.5 animate-spin text-red-400" />
+                          ) : (
+                            <Trash2 className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                          )}
+                        </button>
+                      </span>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-zinc-600 text-xs md:text-sm text-center py-2">
