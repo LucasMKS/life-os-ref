@@ -1,9 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { Flame, Trophy, Zap } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Award, Flame, Zap } from "lucide-react";
 import { gamingApi, statsApi } from "@/lib/api";
 
 const formatHours = (minutes: number) => {
@@ -14,35 +13,27 @@ const formatHours = (minutes: number) => {
   return `${h}h ${m}m`;
 };
 
-const daysSince = (iso: string) => {
-  const then = new Date(iso);
-  then.setHours(0, 0, 0, 0);
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  return Math.round((now.getTime() - then.getTime()) / 86_400_000);
-};
-
 interface InsightCardProps {
   icon: React.ReactNode;
   label: string;
   children: React.ReactNode;
-  accent: "blue" | "amber" | "rose";
+  accent: "blue" | "amber" | "purple";
 }
 
 const accentMap = {
-  blue: "border-t-blue-500/50 text-blue-400",
-  amber: "border-t-amber-500/50 text-amber-400",
-  rose: "border-t-rose-500/50 text-rose-400",
+  blue: "border-t-blue-500/40 text-blue-400",
+  amber: "border-t-amber-500/40 text-amber-400",
+  purple: "border-t-purple-500/40 text-purple-400",
 };
 
 function InsightCard({ icon, label, children, accent }: InsightCardProps) {
   return (
     <div
-      className={`bg-[#121214]/80 backdrop-blur-xl border border-white/5 ${accentMap[accent]} rounded-3xl p-5 flex flex-col gap-3`}
+      className={`bg-[#121214]/70 backdrop-blur-xl border border-white/5 ${accentMap[accent]} rounded-3xl p-5 flex flex-col gap-3 shadow-lg hover:border-white/10 transition-colors`}
     >
       <div className={`flex items-center gap-2 ${accentMap[accent].split(" ")[1]}`}>
         {icon}
-        <h4 className="text-[10px] font-bold uppercase tracking-widest">
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
           {label}
         </h4>
       </div>
@@ -52,18 +43,10 @@ function InsightCard({ icon, label, children, accent }: InsightCardProps) {
 }
 
 export function SteamTopInsights() {
-  const queryClient = useQueryClient();
-
   const { data: profile } = useQuery({
     queryKey: ["steam-profile"],
     queryFn: gamingApi.getSteamProfile,
     retry: false,
-  });
-
-  const { data: journal } = useQuery({
-    queryKey: ["gaming-journal"],
-    queryFn: gamingApi.getJournal,
-    enabled: !!profile,
   });
 
   const { data: library } = useQuery({
@@ -78,14 +61,6 @@ export function SteamTopInsights() {
     enabled: !!profile,
   });
 
-  const updateJournalMutation = useMutation({
-    mutationFn: gamingApi.updateJournal,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["gaming-journal"] });
-      toast.success("Marcado como abandonado.");
-    },
-  });
-
   const insights = useMemo(() => {
     const stats = playtimeStats ?? [];
     const today = new Date();
@@ -94,16 +69,13 @@ export function SteamTopInsights() {
     sevenDaysAgo.setDate(today.getDate() - 6);
 
     const lookupName = (appId: number) => {
-      const fromJournal = (journal ?? []).find(
-        (j: any) => Number(j.appId) === Number(appId)
-      );
-      if (fromJournal) return fromJournal.name as string;
       const fromLibrary = (library?.response?.games ?? []).find(
         (g: any) => Number(g.appid) === Number(appId)
       );
       return fromLibrary?.name ?? `App ${appId}`;
     };
 
+    // 1. Mais jogado dos últimos 7 dias
     const weekTotals = new Map<number, number>();
     stats.forEach((log: any) => {
       const logDate = new Date(log.date);
@@ -115,9 +87,11 @@ export function SteamTopInsights() {
         );
       }
     });
+
     const topWeekly = [...weekTotals.entries()].sort(
       (a, b) => b[1] - a[1]
     )[0];
+
     const mostPlayed = topWeekly
       ? {
           appId: topWeekly[0],
@@ -126,6 +100,7 @@ export function SteamTopInsights() {
         }
       : null;
 
+    // 2. Sequência de dias consecutivos jogando
     const activeDates = new Set(
       stats
         .filter((log: any) => (log.minutesPlayed ?? 0) > 0)
@@ -138,30 +113,20 @@ export function SteamTopInsights() {
       cursor.setDate(cursor.getDate() - 1);
     }
 
-    const lastSeen = new Map<number, string>();
-    stats.forEach((log: any) => {
-      const prev = lastSeen.get(log.appId);
-      if (!prev || log.date > prev) lastSeen.set(log.appId, log.date);
-    });
-    const candidates = (journal ?? []).filter(
-      (g: any) => g.status === "PLAYING" || g.status === "ON_HOLD"
-    );
-    const forgotten = candidates
-      .map((g: any) => {
-        const last = lastSeen.get(Number(g.appId));
-        const days = last ? daysSince(last) : 999;
-        return { game: g, days };
-      })
-      .sort((a: any, b: any) => b.days - a.days)[0];
+    // 3. Jogo mais jogado de todos os tempos da biblioteca
+    const games = library?.response?.games ?? [];
+    const allTimeTop = games.length > 0
+      ? games.slice().sort((a: any, b: any) => (b.playtime_forever ?? 0) - (a.playtime_forever ?? 0))[0]
+      : null;
 
-    return { mostPlayed, streak, forgotten };
-  }, [journal, library, playtimeStats]);
+    return { mostPlayed, streak, allTimeTop };
+  }, [library, playtimeStats]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       <InsightCard
         icon={<Flame className="w-4 h-4 fill-blue-400" />}
-        label="Mais jogado da semana"
+        label="Destaque da Semana"
         accent="blue"
       >
         {insights.mostPlayed ? (
@@ -169,82 +134,68 @@ export function SteamTopInsights() {
             <img
               src={`https://cdn.akamai.steamstatic.com/steam/apps/${insights.mostPlayed.appId}/header.jpg`}
               alt={insights.mostPlayed.name}
-              className="w-20 h-12 rounded-lg object-cover shadow-lg shrink-0"
+              className="w-20 h-12 rounded-xl object-cover shadow-md shrink-0"
             />
             <div className="min-w-0">
               <p className="text-sm font-bold text-white line-clamp-1">
                 {insights.mostPlayed.name}
               </p>
-              <p className="text-xs text-blue-400 font-mono mt-1">
+              <p className="text-xs text-blue-400 font-mono mt-0.5">
                 {formatHours(insights.mostPlayed.minutes)} esta semana
               </p>
             </div>
           </div>
         ) : (
-          <p className="text-xs text-zinc-500">
-            — Nenhuma sessão registrada nos últimos 7 dias.
+          <p className="text-xs text-zinc-500 py-2">
+            Nenhuma sessão registrada nos últimos 7 dias.
           </p>
         )}
       </InsightCard>
 
       <InsightCard
         icon={<Zap className="w-4 h-4 fill-amber-400" />}
-        label="Sequência atual"
+        label="Sequência Ativa"
         accent="amber"
       >
         <div className="flex items-baseline gap-2">
-          <span className="text-4xl font-black text-white tabular-nums leading-none">
+          <span className="text-3xl font-black text-white tabular-nums leading-none">
             {insights.streak}
           </span>
           <span className="text-xs text-zinc-400 font-medium">
-            {insights.streak === 1 ? "dia" : "dias"} seguidos
+            {insights.streak === 1 ? "dia seguido" : "dias seguidos"}
           </span>
         </div>
         <p className="text-[11px] text-zinc-500 mt-2">
           {insights.streak > 0
-            ? "Continue jogando hoje para manter a sequência."
-            : "Sem sessão hoje — comece uma para iniciar a contagem."}
+            ? "Mantenha o ritmo jogando hoje."
+            : "Abra um jogo para iniciar uma nova sequência."}
         </p>
       </InsightCard>
 
       <InsightCard
-        icon={<Trophy className="w-4 h-4 fill-rose-400" />}
-        label="Esquecido há mais tempo"
-        accent="rose"
+        icon={<Award className="w-4 h-4 text-purple-400" />}
+        label="Maior Registro Histórico"
+        accent="purple"
       >
-        {insights.forgotten ? (
+        {insights.allTimeTop ? (
           <div className="flex items-center gap-3">
             <img
-              src={`https://cdn.akamai.steamstatic.com/steam/apps/${insights.forgotten.game.appId}/header.jpg`}
-              alt={insights.forgotten.game.name}
-              className="w-20 h-12 rounded-lg object-cover shadow-lg shrink-0"
+              src={`https://cdn.akamai.steamstatic.com/steam/apps/${insights.allTimeTop.appid}/header.jpg`}
+              alt={insights.allTimeTop.name}
+              className="w-20 h-12 rounded-xl object-cover shadow-md shrink-0"
             />
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0">
               <p className="text-sm font-bold text-white line-clamp-1">
-                {insights.forgotten.game.name}
+                {insights.allTimeTop.name}
               </p>
-              <p className="text-xs text-rose-400 mt-1">
-                {insights.forgotten.days >= 999
-                  ? "Sem registros"
-                  : `${insights.forgotten.days} dias inativo`}
+              <p className="text-xs text-purple-400 font-mono mt-0.5">
+                {Math.round((insights.allTimeTop.playtime_forever ?? 0) / 60)}h no total
               </p>
-              <button
-                onClick={() =>
-                  updateJournalMutation.mutate({
-                    appId: insights.forgotten.game.appId,
-                    name: insights.forgotten.game.name,
-                    status: "ABANDONED",
-                  })
-                }
-                className="text-[10px] font-bold text-rose-400 hover:text-rose-300 mt-1 transition-colors"
-              >
-                Marcar abandonado →
-              </button>
             </div>
           </div>
         ) : (
-          <p className="text-xs text-zinc-500">
-            — Nenhum jogo &quot;Jogando&quot; ou &quot;Em pausa&quot; no diário.
+          <p className="text-xs text-zinc-500 py-2">
+            Biblioteca sincronizando...
           </p>
         )}
       </InsightCard>

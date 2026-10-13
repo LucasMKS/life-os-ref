@@ -56,8 +56,8 @@ export function TwitchDvrSection() {
   };
 
   return (
-    <div className="bg-[#121214]/80 backdrop-blur-xl border border-white/5 border-t-red-500/40 rounded-3xl p-5 md:p-6 lg:p-8 shadow-2xl relative overflow-hidden group">
-      <div className="absolute top-0 right-0 w-80 h-80 bg-red-500/5 rounded-full blur-3xl pointer-events-none transition-opacity group-hover:opacity-100 opacity-40"></div>
+    <div className="bg-[#121214]/70 backdrop-blur-xl border border-white/5 border-t-red-500/25 rounded-3xl p-5 md:p-6 lg:p-7 shadow-xl relative overflow-hidden group">
+      <div className="absolute top-0 right-0 w-80 h-80 bg-red-500/5 rounded-full blur-3xl pointer-events-none transition-opacity group-hover:opacity-100 opacity-25"></div>
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 relative z-10">

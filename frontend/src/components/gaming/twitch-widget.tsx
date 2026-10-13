@@ -104,10 +104,10 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
   return (
     <div className="flex flex-col gap-6">
       {showManagement && (
-        <div className="bg-[#121214]/80 backdrop-blur-xl border border-white/5 border-t-purple-500/50 rounded-3xl p-5 md:p-6 lg:p-8 shadow-2xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/5 rounded-full blur-3xl pointer-events-none transition-opacity group-hover:opacity-100 opacity-50"></div>
+        <div className="bg-[#121214]/70 backdrop-blur-xl border border-white/5 border-t-purple-500/30 rounded-3xl p-5 md:p-6 lg:p-7 shadow-xl relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/5 rounded-full blur-3xl pointer-events-none transition-opacity group-hover:opacity-100 opacity-30"></div>
 
-          <div className="flex items-center justify-between mb-6 md:mb-8 relative z-10">
+          <div className="flex items-center justify-between mb-5 md:mb-6 relative z-10">
             <h4 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
               <Twitch className="w-4 h-4 md:w-5 md:h-5 text-purple-400" />
               Radar Twitch

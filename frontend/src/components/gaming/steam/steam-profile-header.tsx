@@ -1,10 +1,14 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, Flame, Play } from "lucide-react";
+import { ExternalLink, Flame, Gamepad2, Play } from "lucide-react";
 import { gamingApi, statsApi } from "@/lib/api";
 
-export function SteamProfileHeader() {
+interface SteamProfileHeaderProps {
+  onOpenLibrary?: () => void;
+}
+
+export function SteamProfileHeader({ onOpenLibrary }: SteamProfileHeaderProps) {
   const { data: profile } = useQuery({
     queryKey: ["steam-profile"],
     queryFn: gamingApi.getSteamProfile,
@@ -47,94 +51,127 @@ export function SteamProfileHeader() {
   );
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-2 bg-[#121214]/80 backdrop-blur-xl border border-white/5 rounded-3xl p-6 flex items-center gap-6 relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none transition-opacity group-hover:opacity-100 opacity-50"></div>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+      {/* Card do Perfil & Atividade */}
+      <div className="lg:col-span-2 bg-[#121214]/70 backdrop-blur-xl border border-white/5 rounded-3xl p-5 md:p-6 flex flex-col sm:flex-row items-start sm:items-center gap-5 relative overflow-hidden group shadow-xl">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none transition-opacity group-hover:opacity-100 opacity-30" />
 
-        <img
-          src={profile.avatarUrl}
-          alt={profile.personaName}
-          className="w-20 h-20 rounded-2xl border-2 border-blue-500/30 shadow-2xl"
-        />
+        <div className="relative shrink-0">
+          <img
+            src={profile.avatarUrl}
+            alt={profile.personaName}
+            className="w-16 h-16 md:w-20 md:h-20 rounded-2xl border-2 border-white/10 shadow-lg object-cover"
+          />
+          <span
+            className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#121214] ${
+              isPlaying ? "bg-emerald-500 animate-pulse" : "bg-zinc-600"
+            }`}
+            title={isPlaying ? "Jogando agora" : "Offline"}
+          />
+        </div>
 
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <h2 className="text-2xl font-bold text-white">
+            <h2 className="text-xl md:text-2xl font-bold text-white truncate">
               {profile.personaName}
             </h2>
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                isPlaying ? "bg-green-500 animate-pulse" : "bg-zinc-600"
-              }`}
-            ></span>
+            <a
+              href={profile.profileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1 text-zinc-500 hover:text-white transition-colors"
+              title="Abrir perfil na Steam"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
           </div>
-          <p className="text-zinc-400 text-sm mb-3 flex items-center gap-2">
+
+          <p className="text-zinc-400 text-xs md:text-sm mb-3 flex items-center gap-1.5 truncate">
             {isPlaying ? (
               <>
-                <Play className="w-3.5 h-3.5 text-green-400 fill-green-400" />
-                Jogando{" "}
-                <span className="text-green-400 font-semibold">
+                <Play className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400 shrink-0" />
+                <span className="text-zinc-400">Jogando</span>
+                <span className="text-emerald-400 font-semibold truncate">
                   {status.gameextrainfo}
                 </span>
               </>
             ) : (
-              "Atualmente Offline"
+              <span className="text-zinc-500">Offline no momento</span>
             )}
           </p>
-          <div className="flex gap-4">
-            <div className="text-xs text-zinc-500">
-              <span className="block text-zinc-300 font-bold text-sm">
-                {library?.response?.game_count || 0}
+
+          <div className="flex flex-wrap items-center gap-3 md:gap-4 text-xs">
+            <div className="bg-black/30 border border-white/5 rounded-xl px-3 py-1.5">
+              <span className="text-[10px] text-zinc-500 uppercase font-bold block">
+                Na Conta
               </span>
-              Jogos na conta
-            </div>
-            <div className="text-xs text-zinc-500">
-              <span className="block text-zinc-300 font-bold text-sm">
-                {weeklyHours}h
+              <span className="text-sm font-bold text-white tabular-nums">
+                {library?.response?.game_count || 0} jogos
               </span>
-              Jogadas esta semana
             </div>
+
+            <div className="bg-black/30 border border-white/5 rounded-xl px-3 py-1.5">
+              <span className="text-[10px] text-zinc-500 uppercase font-bold block">
+                Esta Semana
+              </span>
+              <span className="text-sm font-bold text-blue-400 tabular-nums">
+                {weeklyHours}h jogadas
+              </span>
+            </div>
+
+            {onOpenLibrary && (
+              <button
+                onClick={onOpenLibrary}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 hover:text-blue-300 border border-blue-500/20 rounded-xl font-semibold transition-colors ml-auto text-xs"
+              >
+                <Gamepad2 className="w-3.5 h-3.5" />
+                <span>Explorar Biblioteca</span>
+              </button>
+            )}
           </div>
         </div>
-
-        <a
-          href={profile.profileUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="p-3 bg-white/5 hover:bg-white/10 rounded-xl transition-colors text-zinc-400 hover:text-white"
-        >
-          <ExternalLink className="w-5 h-5" />
-        </a>
       </div>
 
-      <div className="bg-gradient-to-br from-blue-600/20 to-purple-600/20 backdrop-blur-xl border border-blue-500/20 rounded-3xl p-6 relative overflow-hidden group">
-        <div className="relative z-10">
-          <div className="flex items-center gap-2 text-blue-400 mb-4">
-            <Flame className="w-5 h-5 fill-blue-400" />
-            <h4 className="text-xs font-bold uppercase tracking-widest">
-              Recomendação
+      {/* Card de Recomendação Inteligente */}
+      <div className="bg-[#121214]/70 backdrop-blur-xl border border-white/5 rounded-3xl p-5 md:p-6 flex flex-col justify-between shadow-xl relative overflow-hidden group">
+        <div>
+          <div className="flex items-center gap-2 text-blue-400 mb-3">
+            <Flame className="w-4 h-4 fill-blue-400" />
+            <h4 className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
+              Sugestão de Jogo
             </h4>
           </div>
+
           {recommendations && recommendations.length > 0 ? (
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <img
                 src={`https://cdn.akamai.steamstatic.com/steam/apps/${recommendations[0].appid}/header.jpg`}
                 alt={recommendations[0].name}
-                className="w-24 h-14 rounded-lg object-cover shadow-lg"
+                className="w-24 h-14 rounded-xl object-cover shadow-md shrink-0"
               />
-              <div>
+              <div className="min-w-0">
                 <h5 className="text-sm font-bold text-white line-clamp-1">
                   {recommendations[0].name}
                 </h5>
-                <p className="text-[10px] text-zinc-400 mt-1">
+                <p className="text-[11px] text-zinc-400 mt-0.5">
                   {(recommendations[0].playtime_forever ?? 0) > 0
-                    ? "Continue de onde parou"
+                    ? `${Math.round((recommendations[0].playtime_forever ?? 0) / 60)}h jogadas`
                     : "Ainda não jogado"}
                 </p>
+                <a
+                  href={`https://store.steampowered.com/app/${recommendations[0].appid}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] font-semibold text-blue-400 hover:text-blue-300 transition-colors inline-block mt-1"
+                >
+                  Ver na Steam →
+                </a>
               </div>
             </div>
           ) : (
-            <p className="text-zinc-400 text-sm">Buscando sugestões...</p>
+            <p className="text-xs text-zinc-500 py-2">
+              Sincronizando sugestões da biblioteca...
+            </p>
           )}
         </div>
       </div>

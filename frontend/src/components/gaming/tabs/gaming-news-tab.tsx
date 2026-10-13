@@ -17,14 +17,14 @@ interface GamingNews {
 }
 
 const NewsSkeleton = () => (
-  <div className="p-5 md:p-6 bg-[#121214]/50 rounded-2xl border border-white/5 animate-pulse">
-    <div className="flex justify-between items-start mb-4">
-      <div className="h-5 md:h-6 w-20 md:w-24 bg-white/5 rounded-md"></div>
-      <div className="h-3.5 md:h-4 w-14 md:w-16 bg-white/5 rounded"></div>
+  <div className="p-4 md:p-5 bg-black/40 rounded-2xl border border-white/5 animate-pulse flex flex-col gap-2">
+    <div className="flex justify-between items-start mb-2">
+      <div className="h-5 w-20 bg-white/5 rounded-md" />
+      <div className="h-4 w-14 bg-white/5 rounded" />
     </div>
-    <div className="h-4 md:h-5 w-3/4 bg-white/10 rounded mb-3"></div>
-    <div className="h-3.5 md:h-4 w-full bg-white/5 rounded mb-1.5"></div>
-    <div className="h-3.5 md:h-4 w-2/3 bg-white/5 rounded"></div>
+    <div className="h-4 w-3/4 bg-white/10 rounded mb-2" />
+    <div className="h-3 w-full bg-white/5 rounded" />
+    <div className="h-3 w-2/3 bg-white/5 rounded" />
   </div>
 );
 
@@ -44,9 +44,9 @@ const getBadgeStyle = (type?: string, game?: string) => {
     game === "TFT" ||
     game === "Valorant"
   ) {
-    return "bg-red-500/10 text-red-400 border-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.15)]";
+    return "bg-red-500/10 text-red-400 border-red-500/20";
   }
-  return "bg-blue-500/10 text-blue-400 border-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.15)]";
+  return "bg-blue-500/10 text-blue-400 border-blue-500/20";
 };
 
 export function GamingNewsTab() {
@@ -72,17 +72,26 @@ export function GamingNewsTab() {
   }, [news, gameFilter]);
 
   return (
-    <div className="bg-[#121214]/60 border border-white/5 rounded-3xl p-5 md:p-6 lg:p-8 backdrop-blur-md">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 md:mb-8">
-        <h3 className="text-lg md:text-xl font-bold text-white flex items-center gap-2 md:gap-3">
-          <Rss className="w-5 h-5 md:w-6 md:h-6 text-blue-500" />
-          Últimas Atualizações
-        </h3>
+    <div className="bg-[#121214]/70 border border-white/5 rounded-3xl p-5 md:p-6 lg:p-7 backdrop-blur-xl shadow-xl">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+            <Rss className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="text-base md:text-lg font-bold text-white tracking-tight">
+              Novidades & Atualizações
+            </h3>
+            <p className="text-xs text-zinc-400">
+              Patch notes e novidades dos jogos acompanhados no radar.
+            </p>
+          </div>
+        </div>
 
         <select
           value={gameFilter}
           onChange={(e) => setGameFilter(e.target.value)}
-          className="bg-black/40 border border-white/10 rounded-xl px-3 py-2 md:px-4 md:py-2.5 text-xs md:text-sm font-medium text-zinc-300 focus:outline-none focus:border-blue-500/50 cursor-pointer shadow-inner w-full sm:w-auto"
+          className="bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs font-medium text-zinc-300 focus:outline-none focus:border-blue-500/50 cursor-pointer w-full sm:w-auto"
         >
           {feedGames.map((game) => (
             <option key={game} value={game}>
@@ -93,49 +102,49 @@ export function GamingNewsTab() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <NewsSkeleton key={i} />
           ))}
         </div>
       ) : filteredNews.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
           {filteredNews.map((item) => (
             <a
               key={item.id}
               href={item.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="group flex flex-col p-5 md:p-6 bg-black/40 rounded-2xl border border-white/5 hover:border-blue-500/30 hover:bg-white/[0.02] hover:-translate-y-1 transition-all duration-300 shadow-lg hover:shadow-[0_10px_30px_-15px_rgba(59,130,246,0.3)]"
+              className="group flex flex-col p-4 md:p-5 bg-black/40 rounded-2xl border border-white/5 hover:border-white/15 hover:bg-white/[0.02] transition-all"
             >
-              <div className="flex justify-between items-start mb-3 md:mb-4">
+              <div className="flex justify-between items-start mb-2.5">
                 <span
-                  className={`text-[9px] md:text-[10px] font-bold uppercase tracking-widest px-2 py-1 md:px-2.5 md:py-1 rounded-md border backdrop-blur-sm ${getBadgeStyle(item.type, item.game)}`}
+                  className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border ${getBadgeStyle(item.type, item.game)}`}
                 >
                   {item.game}
                 </span>
-                <span className="text-[9px] md:text-[10px] font-semibold text-zinc-500 bg-white/5 px-2 py-1 rounded-md">
+                <span className="text-[9px] font-semibold text-zinc-500 bg-white/5 px-2 py-0.5 rounded-md">
                   {formatDate(item.publishedAt || item.date)}
                 </span>
               </div>
-              <h4 className="text-sm md:text-base font-bold text-zinc-100 lg:group-hover:text-blue-400 transition-colors mb-2 md:mb-3 flex items-start justify-between gap-3 leading-snug">
+              <h4 className="text-xs md:text-sm font-bold text-zinc-100 group-hover:text-blue-400 transition-colors mb-2 flex items-start justify-between gap-2 leading-snug">
                 <span className="line-clamp-2">{item.title}</span>
-                <ExternalLink className="w-4 h-4 shrink-0 mt-0.5 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 translate-x-0 lg:-translate-x-2 lg:group-hover:translate-x-0 transition-all text-blue-400" />
+                <ExternalLink className="w-3.5 h-3.5 shrink-0 mt-0.5 text-zinc-500 group-hover:text-blue-400 transition-colors" />
               </h4>
-              <p className="text-[11px] md:text-xs text-zinc-400 line-clamp-3 leading-relaxed mt-auto">
+              <p className="text-[11px] text-zinc-400 line-clamp-2 leading-relaxed mt-auto">
                 {item.summary}
               </p>
             </a>
           ))}
         </div>
       ) : (
-        <div className="bg-black/20 rounded-2xl border border-dashed border-white/10 p-10 md:p-16 text-center">
-          <Gamepad2 className="w-10 h-10 md:w-12 md:h-12 text-zinc-800 mx-auto mb-3 md:mb-4" />
-          <p className="text-zinc-400 text-sm font-medium">
-            O radar está limpo.
+        <div className="bg-black/20 rounded-2xl border border-dashed border-white/10 p-8 md:p-12 text-center">
+          <Gamepad2 className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
+          <p className="text-zinc-400 text-xs font-medium">
+            Nenhuma novidade no radar no momento.
           </p>
-          <p className="text-zinc-600 text-xs md:text-sm mt-1">
-            Adicione jogos ao radar na biblioteca Steam para ver as atualizações aqui.
+          <p className="text-zinc-600 text-[11px] mt-1">
+            Abra a biblioteca Steam acima e ative o radar dos seus jogos prediletos.
           </p>
         </div>
       )}

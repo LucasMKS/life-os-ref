@@ -95,8 +95,8 @@ export function SteamStatsChart() {
   const isPositive = weekDelta >= 0;
 
   return (
-    <div className="bg-[#121214]/80 backdrop-blur-xl border border-white/5 border-t-blue-500/50 rounded-3xl p-6 lg:p-8 shadow-2xl relative overflow-hidden flex flex-col min-h-[320px] group">
-      <div className="absolute -top-24 -right-24 w-64 h-64 bg-blue-500/10 blur-[80px] rounded-full pointer-events-none transition-opacity group-hover:opacity-100 opacity-50" />
+    <div className="bg-[#121214]/70 backdrop-blur-xl border border-white/5 border-t-blue-500/30 rounded-3xl p-6 lg:p-7 shadow-xl relative overflow-hidden flex flex-col min-h-[300px] group">
+      <div className="absolute -top-24 -right-24 w-64 h-64 bg-blue-500/5 blur-[80px] rounded-full pointer-events-none transition-opacity group-hover:opacity-100 opacity-40" />
 
       <div className="flex items-start justify-between mb-6 relative z-10">
         <div>
