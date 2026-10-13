@@ -1,38 +1,46 @@
 import { NotesDashboard } from "@/components/notes/notes-dashboard";
 import { Navbar } from "@/components/navbar";
-import { Notebook } from "lucide-react";
+import { Notebook, Sparkles } from "lucide-react";
 
 export default function NotesHub() {
   return (
-    <main className="min-h-screen flex flex-col relative bg-[#09090b] text-zinc-100 selection:bg-teal-500/30 overflow-hidden">
-      {/* Glows de Fundo Temáticos - Agora em tons de Teal e Ciano */}
-      <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-teal-500/10 rounded-full blur-[120px] pointer-events-none -ml-40 -mt-20"></div>
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-cyan-600/10 rounded-full blur-[120px] pointer-events-none -mr-40 -mt-20"></div>
+    <main className="min-h-screen flex flex-col relative bg-[#09090b] text-zinc-100 selection:bg-teal-500/30 overflow-x-hidden">
+      {/* Background Decorative Elements */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-teal-600/5 rounded-full blur-[140px]" />
+        <div className="absolute top-[20%] right-[-10%] w-[35%] h-[35%] bg-cyan-600/5 rounded-full blur-[140px]" />
 
-      {/* Watermark Gigante */}
-      <Notebook
-        className="absolute top-40 right-10 w-[600px] h-[600px] text-white opacity-[0.015] pointer-events-none -rotate-12"
-        strokeWidth={1}
-      />
+        {/* Fine grid pattern overlay */}
+        <div className="absolute inset-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:20px_20px] pointer-events-none" />
+      </div>
 
       <Navbar />
 
-      <div className="z-10 w-full max-w-[1400px] mx-auto mt-4 md:mt-12 px-4 md:px-6 pb-12 md:pb-20">
-        <div className="mb-5 md:mb-10 text-center w-full flex flex-col items-center relative">
-          <span className="px-3 py-1 text-[10px] font-bold tracking-widest uppercase bg-white/5 border border-white/10 rounded-full text-teal-400 mb-2 md:mb-4 backdrop-blur-md">
-            Espaço Criativo
-          </span>
-          <h1 className="text-2xl md:text-5xl font-bold tracking-tight mb-1.5 md:mb-3 text-white">
-            Minhas{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-cyan-500">
-              Notas
-            </span>
-          </h1>
-          <p className="text-zinc-400 max-w-lg mx-auto text-xs md:text-base font-medium hidden sm:block">
-            Capture pensamentos, organize listas, guarde links importantes e
-            desenvolva suas ideias em um só lugar.
-          </p>
-        </div>
+      <div className="z-10 w-full max-w-[1500px] mx-auto mt-4 md:mt-10 px-4 md:px-8 pb-16 md:pb-24">
+        {/* HEADER SECTION */}
+        <header className="mb-6 md:mb-10 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div className="animate-in slide-in-from-left-6 fade-in duration-500 ease-out">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-teal-500/20 to-cyan-500/20 border border-white/10 flex items-center justify-center text-teal-400 shadow-lg">
+                <Notebook className="w-5 h-5" />
+              </div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl md:text-4xl font-black tracking-tight text-white">
+                  Minhas{" "}
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-cyan-400">
+                    Notas
+                  </span>
+                </h1>
+                <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[9px] font-bold text-zinc-400 uppercase tracking-widest">
+                  <Sparkles className="w-2.5 h-2.5 text-teal-400" /> ANOTAÇÕES
+                </div>
+              </div>
+            </div>
+            <p className="text-zinc-400 text-xs md:text-sm font-medium max-w-xl">
+              Capture pensamentos, organize listas de tarefas e armazene referências rápidas.
+            </p>
+          </div>
+        </header>
 
         <div className="relative">
           <NotesDashboard />
