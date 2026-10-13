@@ -88,9 +88,9 @@ export function TwitchDvrSection() {
           <a
             href={
               (import.meta as any).env?.VITE_TWITCH_DVR_URL ||
-              (typeof window !== "undefined"
-                ? `http://${window.location.hostname}:8082`
-                : "http://localhost:8082")
+              (typeof window !== "undefined" && window.location.hostname === "localhost"
+                ? "http://localhost:8082"
+                : "https://dvr.lucasmks.com.br")
             }
             target="_blank"
             rel="noopener noreferrer"
