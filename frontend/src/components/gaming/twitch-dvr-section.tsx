@@ -86,7 +86,12 @@ export function TwitchDvrSection() {
           </button>
 
           <a
-            href={typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:8082` : "http://localhost:8082"}
+            href={
+              (import.meta as any).env?.VITE_TWITCH_DVR_URL ||
+              (typeof window !== "undefined"
+                ? `http://${window.location.hostname}:8082`
+                : "http://localhost:8082")
+            }
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-zinc-200 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors"
