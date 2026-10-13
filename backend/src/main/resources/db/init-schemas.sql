@@ -20,13 +20,14 @@ CREATE TABLE IF NOT EXISTS shedlock.shedlock (
     PRIMARY KEY (name)
 );
 
--- Migração de colunas da tabela gaming.user_tracked_twitch_channels
-DO $$ 
-BEGIN 
-    IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'gaming' AND table_name = 'user_tracked_twitch_channels') THEN
-        ALTER TABLE gaming.user_tracked_twitch_channels ADD COLUMN IF NOT EXISTS record_vod BOOLEAN DEFAULT FALSE;
-        ALTER TABLE gaming.user_tracked_twitch_channels ADD COLUMN IF NOT EXISTS record_quality VARCHAR(30) DEFAULT '720p60';
-        UPDATE gaming.user_tracked_twitch_channels SET record_vod = FALSE WHERE record_vod IS NULL;
-        UPDATE gaming.user_tracked_twitch_channels SET record_quality = '720p60' WHERE record_quality IS NULL;
-    END IF;
-END $$;
+-- Tabela e migração de colunas de canais da Twitch
+CREATE TABLE IF NOT EXISTS gaming.user_tracked_twitch_channels (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    channel_name VARCHAR(255) NOT NULL,
+    record_vod BOOLEAN DEFAULT FALSE NOT NULL,
+    record_quality VARCHAR(30) DEFAULT '720p60'
+);
+
+ALTER TABLE gaming.user_tracked_twitch_channels ADD COLUMN IF NOT EXISTS record_vod BOOLEAN DEFAULT FALSE;
+ALTER TABLE gaming.user_tracked_twitch_channels ADD COLUMN IF NOT EXISTS record_quality VARCHAR(30) DEFAULT '720p60';
