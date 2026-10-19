@@ -44,6 +44,8 @@ public class FinanceNotificationScheduler {
     private final AtomicBoolean runningUpcomingPayments = new AtomicBoolean(false);
     private final AtomicBoolean runningMonthlyBalance = new AtomicBoolean(false);
 
+    private static final java.time.ZoneId SAO_PAULO_ZONE = java.time.ZoneId.of("America/Sao_Paulo");
+
     /**
      * LEMBRETE DE VÉSPERA: Roda todos os dias às 09:00 da manhã.
      * Verifica se alguma assinatura vence exatamante no dia seguinte.
@@ -57,7 +59,7 @@ public class FinanceNotificationScheduler {
         }
 
         try {
-            LocalDate tomorrow = LocalDate.now().plusDays(1);
+            LocalDate tomorrow = LocalDate.now(SAO_PAULO_ZONE).plusDays(1);
             log.info("Cronjob Finance: Buscando assinaturas com vencimento para amanhã ({})", tomorrow);
 
             List<Subscription> upcoming = repository.findByNextPayment(tomorrow);
@@ -104,7 +106,7 @@ public class FinanceNotificationScheduler {
      * BALANÇO MENSAL: Roda todo dia 1º do mês às 10:00 da manhã.
      * Faz a soma total de todas as assinaturas ativas para dar o panorama do mês.
      */
-    @Scheduled(cron = "${app.schedulers.finance-monthly-balance.cron:0 0 10 1 * *}")
+    @Scheduled(cron = "${app.schedulers.finance-monthly-balance.cron:0 0 10 1 * *}", zone = "America/Sao_Paulo")
     @SchedulerLock(name = "finance-sendMonthlyBalance", lockAtMostFor = "PT30M", lockAtLeastFor = "PT5M")
     public void sendMonthlyBalance() {
         if (!runningMonthlyBalance.compareAndSet(false, true)) {

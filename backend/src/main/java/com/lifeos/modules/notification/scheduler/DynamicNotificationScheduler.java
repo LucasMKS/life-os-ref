@@ -45,18 +45,25 @@ public class DynamicNotificationScheduler {
     private final MediaNotificationScheduler mediaNotificationScheduler;
     private final SportsNotificationScheduler sportsNotificationScheduler;
 
-    private static final ZoneId BRT = ZoneId.of("America/Sao_Paulo");
     private final Set<String> localFallbackDispatched = ConcurrentHashMap.newKeySet();
+
+    @org.springframework.beans.factory.annotation.Value("${app.bot-user-id:}")
+    private String ownerUserId;
 
     @Scheduled(cron = "0 * * * * *", zone = "America/Sao_Paulo")
     public void processDynamicDispatches() {
         LocalTime now = LocalTime.now(BRT);
-        String currentTime = now.format(DateTimeFormatter.ofPattern("HH:mm"));
         String today = LocalDate.now(BRT).format(DateTimeFormatter.ISO_LOCAL_DATE);
 
-        List<UserNotificationSettings> allSettings = settingsRepository.findAll();
+        List<UserNotificationSettings> allSettings = new ArrayList<>(settingsRepository.findAll());
         if (allSettings.isEmpty()) {
-            return;
+            if (ownerUserId != null && !ownerUserId.isBlank()) {
+                allSettings.add(UserNotificationSettings.defaultSettings(ownerUserId));
+            } else {
+                return;
+            }
+        } else if (ownerUserId != null && !ownerUserId.isBlank() && allSettings.stream().noneMatch(s -> ownerUserId.equals(s.getUserId()))) {
+            allSettings.add(UserNotificationSettings.defaultSettings(ownerUserId));
         }
 
         for (UserNotificationSettings s : allSettings) {
@@ -71,78 +78,84 @@ public class DynamicNotificationScheduler {
             }
 
             // 1. Briefing F1
-            if (s.isF1Enabled() && currentTime.equals(s.getF1BriefingTime())) {
+            if (s.isF1Enabled() && isWithinDispatchWindow(now, s.getF1BriefingTime(), 30)) {
                 String key = "dyn_dispatch:f1:" + userId + ":" + today;
                 if (markDispatched(key)) {
-                    log.info("Disparando Briefing F1 dinâmico para usuário {} às {}", userId, currentTime);
+                    log.info("Disparando Briefing F1 dinâmico para usuário {} às {}", userId, now);
                     try {
                         f1NotificationScheduler.sendDailyNewsBriefing();
                     } catch (Exception e) {
+                        clearDispatched(key);
                         log.error("Erro ao executar sendDailyNewsBriefing para usuário {}: {}", userId, e.getMessage(), e);
                     }
                 }
             }
 
             // 2. Resumo Esportivo
-            if (s.isSportsEnabled() && currentTime.equals(s.getSportsMorningTime())) {
+            if (s.isSportsEnabled() && isWithinDispatchWindow(now, s.getSportsMorningTime(), 30)) {
                 String key = "dyn_dispatch:sports:" + userId + ":" + today;
                 if (markDispatched(key)) {
-                    log.info("Disparando Resumo Esportivo dinâmico para usuário {} às {}", userId, currentTime);
+                    log.info("Disparando Resumo Esportivo dinâmico para usuário {} às {}", userId, now);
                     try {
                         sportsNotificationScheduler.sendDailyBriefing();
                     } catch (Exception e) {
+                        clearDispatched(key);
                         log.error("Erro ao executar sendDailyBriefing de esportes para usuário {}: {}", userId, e.getMessage(), e);
                     }
                 }
             }
 
             // 3. Clima Matinal
-            if (s.isWeatherEnabled() && currentTime.equals(s.getWeatherTime())) {
+            if (s.isWeatherEnabled() && isWithinDispatchWindow(now, s.getWeatherTime(), 30)) {
                 String key = "dyn_dispatch:weather:" + userId + ":" + today;
                 if (markDispatched(key)) {
-                    log.info("Disparando Previsão do Tempo dinâmica para usuário {} às {}", userId, currentTime);
+                    log.info("Disparando Previsão do Tempo dinâmica para usuário {} às {}", userId, now);
                     try {
                         routineWeatherService.checkMorningRoutineWeather();
                     } catch (Exception e) {
+                        clearDispatched(key);
                         log.error("Erro ao executar checkMorningRoutineWeather para usuário {}: {}", userId, e.getMessage(), e);
                     }
                 }
             }
 
             // 4. Radar de Mídia (Lançamentos da watchlist)
-            if (s.isMediaEnabled() && currentTime.equals(s.getMediaTime())) {
+            if (s.isMediaEnabled() && isWithinDispatchWindow(now, s.getMediaTime(), 30)) {
                 String key = "dyn_dispatch:media:" + userId + ":" + today;
                 if (markDispatched(key)) {
-                    log.info("Disparando Radar de Mídia dinâmico para usuário {} às {}", userId, currentTime);
+                    log.info("Disparando Radar de Mídia dinâmico para usuário {} às {}", userId, now);
                     try {
                         mediaNotificationScheduler.notifyDailyMediaReleases();
                     } catch (Exception e) {
+                        clearDispatched(key);
                         log.error("Erro ao executar notifyDailyMediaReleases para usuário {}: {}", userId, e.getMessage(), e);
                     }
                 }
             }
 
             // 5. Alertas Financeiros
-            if (s.isFinanceEnabled() && currentTime.equals(s.getFinanceTime())) {
+            if (s.isFinanceEnabled() && isWithinDispatchWindow(now, s.getFinanceTime(), 30)) {
                 String key = "dyn_dispatch:finance:" + userId + ":" + today;
                 if (markDispatched(key)) {
-                    log.info("Disparando Alertas Financeiros dinâmicos para usuário {} às {}", userId, currentTime);
+                    log.info("Disparando Alertas Financeiros dinâmicos para usuário {} às {}", userId, now);
                     try {
                         financeNotificationScheduler.notifyUpcomingPayments();
                     } catch (Exception e) {
+                        clearDispatched(key);
                         log.error("Erro ao executar notifyUpcomingPayments para usuário {}: {}", userId, e.getMessage(), e);
                     }
                 }
             }
 
             // 6. Lembrete de Leitura (Nudge)
-            if (s.isReadingEnabled() && currentTime.equals(s.getReadingTime())) {
+            if (s.isReadingEnabled() && isWithinDispatchWindow(now, s.getReadingTime(), 30)) {
                 String key = "dyn_dispatch:reading:" + userId + ":" + today;
                 if (markDispatched(key)) {
-                    log.info("Disparando Lembrete de Leitura dinâmico para usuário {} às {}", userId, currentTime);
+                    log.info("Disparando Lembrete de Leitura dinâmico para usuário {} às {}", userId, now);
                     try {
                         readingNotificationScheduler.notifyReadingSlump();
                     } catch (Exception e) {
+                        clearDispatched(key);
                         log.error("Erro ao executar notifyReadingSlump para usuário {}: {}", userId, e.getMessage(), e);
                     }
                 }
@@ -150,16 +163,47 @@ public class DynamicNotificationScheduler {
         }
     }
 
+    private boolean isWithinDispatchWindow(LocalTime now, String targetTimeStr, int windowMinutes) {
+        if (targetTimeStr == null || targetTimeStr.isBlank()) {
+            return false;
+        }
+        try {
+            LocalTime target = LocalTime.parse(targetTimeStr.trim());
+            // Tolerância: de target até target + windowMinutes
+            LocalTime windowEnd = target.plusMinutes(windowMinutes);
+            if (target.isBefore(windowEnd)) {
+                return !now.isBefore(target) && now.isBefore(windowEnd);
+            } else {
+                // Passou da meia-noite
+                return !now.isBefore(target) || now.isBefore(windowEnd);
+            }
+        } catch (Exception e) {
+            log.warn("Erro ao fazer parse do horário de notificação '{}': {}", targetTimeStr, e.getMessage());
+            return false;
+        }
+    }
+
     private boolean markDispatched(String key) {
         try {
             if (redisTemplate != null) {
-                Boolean set = redisTemplate.opsForValue().setIfAbsent(key, "1", Duration.ofHours(20));
+                Boolean set = redisTemplate.opsForValue().setIfAbsent(key, "1", Duration.ofHours(23));
                 return Boolean.TRUE.equals(set);
             }
         } catch (Exception e) {
             log.warn("Falha ao registrar despacho no Redis para chave {}. Usando fallback local.", key, e);
         }
         return localFallbackDispatched.add(key);
+    }
+
+    private void clearDispatched(String key) {
+        try {
+            if (redisTemplate != null) {
+                redisTemplate.delete(key);
+            }
+        } catch (Exception e) {
+            log.warn("Falha ao limpar despacho no Redis para chave {}: {}", key, e.getMessage());
+        }
+        localFallbackDispatched.remove(key);
     }
 
     private boolean isQuietHours(UserNotificationSettings settings, LocalTime now) {

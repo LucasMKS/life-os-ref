@@ -58,7 +58,7 @@ public class GamingNotificationScheduler {
      * RADAR DE ATUALIZAÇÕES: Roda a cada 4 horas (00:00, 04:00, 08:00...).
      * Pega apenas as notícias que saíram na janela dessas 4 horas.
      */
-    @Scheduled(cron = "${app.schedulers.gaming-updates.cron:0 0 0/4 * * *}")
+    @Scheduled(cron = "${app.schedulers.gaming-updates.cron:0 0 0/4 * * *}", zone = "America/Sao_Paulo")
     @SchedulerLock(name = "gaming-notifyGameUpdates", lockAtMostFor = "PT15M", lockAtLeastFor = "PT5M")
     public void notifyGameUpdates() {
         if (!runningGamingUpdates.compareAndSet(false, true)) {

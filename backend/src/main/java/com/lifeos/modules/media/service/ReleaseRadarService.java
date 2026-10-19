@@ -684,9 +684,15 @@ public class ReleaseRadarService {
     }
 
     private void processBatchNotifications(List<ReleaseRadarDTO> releases, String userId) {
+        if (isPlaceholderUser(userId)) {
+            log.debug("Ignorando processBatchNotifications para userId placeholder: {}", userId);
+            return;
+        }
+
         LocalDate today = LocalDate.now(SAO_PAULO_ZONE);
         List<String> messages = new ArrayList<>();
-        String effectiveUserId = (userId != null && !userId.isBlank() && !"default".equals(userId)) ? userId : "1";
+        Set<String> processedInBatch = new HashSet<>();
+        String effectiveUserId = (userId != null && !userId.isBlank()) ? userId : "1";
 
         for (ReleaseRadarDTO dto : releases) {
             try {
@@ -695,7 +701,13 @@ public class ReleaseRadarService {
                     String episodeSuffix = "SERIES".equals(dto.type())
                             ? (":S" + dto.seasonNumber() + "E" + dto.episodeNumber())
                             : "";
-                    String notifiedKey = REDIS_NOTIFIED_PREFIX + dto.tmdbId() + episodeSuffix + ":" + releaseDate.toString() + ":" + effectiveUserId;
+                    String itemKey = dto.tmdbId() + episodeSuffix + ":" + releaseDate.toString();
+                    if (!processedInBatch.add(itemKey)) {
+                        continue; // Evita itens repetidos no mesmo lote
+                    }
+
+                    // Trava global por lançamento do dia para evitar duplicidade entre múltiplos userIds/apelidos
+                    String notifiedKey = REDIS_NOTIFIED_PREFIX + itemKey;
                     Boolean acquired = redisTemplate.opsForValue().setIfAbsent(notifiedKey, "true", Duration.ofHours(48));
 
                     if (Boolean.TRUE.equals(acquired)) {
@@ -729,12 +741,18 @@ public class ReleaseRadarService {
             eventPublisher.publishEvent(NotificationEvent.builder()
                     .userId(effectiveUserId)
                     .type("MEDIA")
-                    .message(messageText.toString())
+                    .message(messageText.toString().trim())
                     .buttonLabel(buttonLabel)
                     .buttonPath(buttonUrl)
                     .build());
             log.info("Notificação de Radar agregada enviada com {} lançamentos para usuário {}.", messages.size(), effectiveUserId);
         }
+    }
+
+    private boolean isPlaceholderUser(String userId) {
+        if (userId == null || userId.isBlank()) return true;
+        String u = userId.trim().toLowerCase();
+        return u.equals("default") || u.equals("user") || u.equals("unknown") || u.equals("undefined") || u.equals("null");
     }
 
     private Mono<Map<String, RatingStatusDTO>> fetchSeriesRatings(List<String> serieIds, String authHeader) {
@@ -1556,7 +1574,7 @@ public class ReleaseRadarService {
      * os detalhes atualizados no TMDB sem depender de JWT.
      */
     public void checkDailyReleasesForUser(String userId) {
-        if (userId == null || userId.isBlank() || "default".equals(userId)) {
+        if (isPlaceholderUser(userId)) {
             return;
         }
 
@@ -1634,7 +1652,7 @@ public class ReleaseRadarService {
      * Sincroniza a lista de mídias acompanhadas no banco local do LifeOS a partir da watchlist retornada pelo lmsfavorite.
      */
     public void syncUserTrackedMedia(String userId, List<String> movieIds, List<String> serieIds, List<ReleaseRadarDTO> releases) {
-        if (userId == null || userId.isBlank() || "default".equals(userId)) {
+        if (isPlaceholderUser(userId)) {
             return;
         }
 

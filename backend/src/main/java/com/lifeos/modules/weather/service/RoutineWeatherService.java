@@ -30,6 +30,9 @@ public class RoutineWeatherService {
     @Value("${app.api-keys.openweathermap:}")
     private String apiKey;
 
+    @Value("${app.bot-user-id:}")
+    private String ownerUserId;
+
     private final List<String> targetCities = Arrays.asList("Contagem,BR");
 
     // Disparado dinamicamente pelo DynamicNotificationScheduler de acordo com o horário do usuário
@@ -93,9 +96,12 @@ public class RoutineWeatherService {
                                 cityName, description, rainTime, Math.round(temp)
                         );
 
+                        String targetUserId = (ownerUserId != null && !ownerUserId.isBlank()) ? ownerUserId : "1";
+
                         eventPublisher.publishEvent(NotificationEvent.builder()
                                 .type("WEATHER")
                                 .message(message)
+                                .userId(targetUserId)
                                 .build());
 
                         log.info("Alerta de chuva enviado para {}!", cityName);

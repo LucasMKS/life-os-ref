@@ -375,7 +375,11 @@ public class EspnSportsClient {
             return null;
         }
 
+        JsonNode teamNode = cNode.path("team");
         String id = cNode.path("id").asText();
+        if ((id == null || id.isBlank()) && teamNode.has("id")) {
+            id = teamNode.path("id").asText();
+        }
         String homeAway = cNode.path("homeAway").asText("home");
         boolean winner = cNode.path("winner").asBoolean(false);
 
@@ -395,9 +399,14 @@ public class EspnSportsClient {
             }
         }
 
-        JsonNode teamNode = cNode.path("team");
-        String rawName = teamNode.path("name").asText();
-        String rawDisplayName = teamNode.path("displayName").asText(rawName);
+        String rawName = teamNode.path("name").asText("");
+        String rawDisplayName = teamNode.path("displayName").asText("");
+        if (rawName.isBlank()) {
+            rawName = !rawDisplayName.isBlank() ? rawDisplayName : teamNode.path("shortDisplayName").asText("");
+        }
+        if (rawDisplayName.isBlank()) {
+            rawDisplayName = rawName;
+        }
         String name = SportsTranslationHelper.translateTeamName(rawName);
         String displayName = SportsTranslationHelper.translateTeamName(rawDisplayName);
         String abbreviation = teamNode.path("abbreviation").asText();

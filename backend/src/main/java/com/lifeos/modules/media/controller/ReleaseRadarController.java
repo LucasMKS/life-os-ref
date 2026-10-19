@@ -1,5 +1,6 @@
 package com.lifeos.modules.media.controller;
 
+import com.lifeos.core.security.UserContext;
 import com.lifeos.modules.media.dto.MediaOverviewDTO;
 import com.lifeos.modules.media.dto.ReleaseRadarDTO;
 import com.lifeos.modules.media.dto.WeeklyCalendarDayDTO;
@@ -28,7 +29,7 @@ public class ReleaseRadarController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
 
-        String safeUserId = (userId != null) ? userId : "default";
+        String safeUserId = UserContext.resolveUserId(userId);
         return ResponseEntity.ok(radarService.getUpcomingReleases(safeUserId, authHeader));
     }
 
@@ -37,7 +38,7 @@ public class ReleaseRadarController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
 
-        String safeUserId = (userId != null) ? userId : "default";
+        String safeUserId = UserContext.resolveUserId(userId);
         return ResponseEntity.ok(radarService.getWeeklyCalendar(safeUserId, authHeader));
     }
 
@@ -46,7 +47,7 @@ public class ReleaseRadarController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
 
-        String safeUserId = (userId != null) ? userId : "default";
+        String safeUserId = UserContext.resolveUserId(userId);
         return ResponseEntity.ok(radarService.getMediaOverview(safeUserId, authHeader));
     }
 
@@ -54,7 +55,7 @@ public class ReleaseRadarController {
     public ResponseEntity<List<SerieWatchStatusDTO>> getEpisodesToWatch(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        String safeUserId = (userId != null) ? userId : "default";
+        String safeUserId = UserContext.resolveUserId(userId);
         return ResponseEntity.ok(radarService.getEpisodesToWatch(safeUserId, authHeader));
     }
 
@@ -65,7 +66,7 @@ public class ReleaseRadarController {
             @RequestParam Integer seasonNumber,
             @RequestParam Integer episodeNumber,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        String safeUserId = (userId != null) ? userId : "default";
+        String safeUserId = UserContext.resolveUserId(userId);
         radarService.markEpisodeAsWatched(safeUserId, serieId, seasonNumber, episodeNumber, authHeader);
         return ResponseEntity.ok().build();
     }
@@ -77,7 +78,7 @@ public class ReleaseRadarController {
             @RequestParam Integer seasonNumber,
             @RequestParam Integer episodeNumber,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        String safeUserId = (userId != null) ? userId : "default";
+        String safeUserId = UserContext.resolveUserId(userId);
         radarService.markEpisodeAsUnwatched(safeUserId, serieId, seasonNumber, episodeNumber, authHeader);
         return ResponseEntity.ok().build();
     }
@@ -89,7 +90,7 @@ public class ReleaseRadarController {
             @RequestParam Integer seasonNumber,
             @RequestParam Integer episodeNumber,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        String safeUserId = (userId != null) ? userId : "default";
+        String safeUserId = UserContext.resolveUserId(userId);
         radarService.markAllEpisodesAsWatchedUpTo(safeUserId, serieId, seasonNumber, episodeNumber, authHeader);
         return ResponseEntity.ok().build();
     }
@@ -102,7 +103,7 @@ public class ReleaseRadarController {
             @RequestParam Integer episodeNumber,
             @RequestParam Double rating,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        String safeUserId = (userId != null) ? userId : "default";
+        String safeUserId = UserContext.resolveUserId(userId);
         radarService.rateEpisode(safeUserId, serieId, seasonNumber, episodeNumber, rating, authHeader);
         return ResponseEntity.ok().build();
     }
@@ -113,7 +114,7 @@ public class ReleaseRadarController {
             @RequestParam String serieId,
             @RequestParam Boolean watchLater,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        String safeUserId = (userId != null) ? userId : "default";
+        String safeUserId = UserContext.resolveUserId(userId);
         radarService.toggleWatchLater(safeUserId, serieId, watchLater, authHeader);
         return ResponseEntity.ok().build();
     }
@@ -123,7 +124,7 @@ public class ReleaseRadarController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestParam String serieId,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        String safeUserId = (userId != null) ? userId : "default";
+        String safeUserId = UserContext.resolveUserId(userId);
         radarService.startRewatch(safeUserId, serieId, authHeader);
         return ResponseEntity.ok().build();
     }
@@ -133,7 +134,7 @@ public class ReleaseRadarController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestParam String serieId,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        String safeUserId = (userId != null) ? userId : "default";
+        String safeUserId = UserContext.resolveUserId(userId);
         radarService.cancelRewatch(safeUserId, serieId, authHeader);
         return ResponseEntity.ok().build();
     }
@@ -143,7 +144,7 @@ public class ReleaseRadarController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestParam String serieId,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        String safeUserId = (userId != null) ? userId : "default";
+        String safeUserId = UserContext.resolveUserId(userId);
         radarService.resetRewatch(safeUserId, serieId, authHeader);
         return ResponseEntity.ok().build();
     }

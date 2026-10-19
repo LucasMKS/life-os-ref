@@ -19,12 +19,15 @@ public class NotificationEventListener {
     private final TelegramService telegramService;
     private final NotificationService notificationService;
     private final NotificationSettingsService notificationSettingsService;
+    private final org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
 
     @Value("${app.site-url:http://localhost:5173}")
     private String siteUrl;
 
     @Value("${app.bot-user-id:}")
     private String ownerUserId;
+
+    private static final java.time.ZoneId BRT = java.time.ZoneId.of("America/Sao_Paulo");
 
     @Async("taskExecutor")
     @EventListener
@@ -42,8 +45,21 @@ public class NotificationEventListener {
 
             notificationService.saveAndNotify(event.getMessage(), type, userId);
 
-            String formattedMessage = "🤖 <b>LifeOS - LucasMKS</b>\n\n" + event.getMessage();
             String targetChatId = notificationSettingsService.getEffectiveChatId(userId);
+
+            // Salvaguarda anti-duplicação no Telegram por conteúdo + chatId + dia
+            if (redisTemplate != null && event.getMessage() != null) {
+                String today = java.time.LocalDate.now(BRT).toString();
+                String msgHash = Integer.toHexString(event.getMessage().trim().hashCode());
+                String dedupKey = "notif_event_dedup:" + (targetChatId != null ? targetChatId : "default") + ":" + type + ":" + msgHash + ":" + today;
+                Boolean isFirst = redisTemplate.opsForValue().setIfAbsent(dedupKey, "1", java.time.Duration.ofHours(12));
+                if (Boolean.FALSE.equals(isFirst)) {
+                    log.info("Mensagem idêntica do tipo {} já enviada ao chat {} hoje. Bloqueando duplicação.", type, targetChatId);
+                    return;
+                }
+            }
+
+            String formattedMessage = "🤖 <b>LifeOS - LucasMKS</b>\n\n" + event.getMessage();
 
             if (event.getButtonLabel() != null && !event.getButtonLabel().isBlank()
                     && event.getButtonPath() != null && !event.getButtonPath().isBlank()) {

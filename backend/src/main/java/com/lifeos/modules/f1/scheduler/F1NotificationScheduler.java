@@ -33,6 +33,9 @@ public class F1NotificationScheduler {
     @Value("${app.schedulers.f1-upcoming.lookahead-minutes:15}")
     private long lookaheadMinutes;
 
+    @Value("${app.bot-user-id:}")
+    private String ownerUserId;
+
     @Scheduled(
             fixedDelayString = "${app.schedulers.f1-upcoming.fixed-delay-ms:60000}",
             initialDelayString = "${app.schedulers.f1-upcoming.initial-delay-ms:45000}"
@@ -46,12 +49,16 @@ public class F1NotificationScheduler {
 
         try {
             LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
-            LocalDateTime targetTime = nowUtc.plusMinutes(lookaheadMinutes);
+            LocalDateTime windowEnd = nowUtc.plusMinutes(lookaheadMinutes + 1);
 
-            LocalDateTime startOfMinute = targetTime.truncatedTo(ChronoUnit.MINUTES);
-            LocalDateTime endOfMinute = startOfMinute.plusMinutes(1).minusNanos(1);
+            // Garante que o banco tem sessões sincronizadas
+            try {
+                f1Service.getNextSessions();
+            } catch (Exception e) {
+                log.debug("Aviso ao tentar atualizar sessões de F1: {}", e.getMessage());
+            }
 
-            List<F1Session> upcomingSessions = sessionRepository.findByDateBetweenAndNotifiedFalse(startOfMinute, endOfMinute);
+            List<F1Session> upcomingSessions = sessionRepository.findByDateBetweenAndNotifiedFalse(nowUtc.minusMinutes(2), windowEnd);
 
             for (F1Session session : upcomingSessions) {
                 log.info("Sessão encontrada! Disparando alerta de 15 minutos para: {}", session.getName());
@@ -61,11 +68,14 @@ public class F1NotificationScheduler {
                         session.getName()
                 );
 
+                String targetUserId = (ownerUserId != null && !ownerUserId.isBlank()) ? ownerUserId : "1";
+
                 eventPublisher.publishEvent(NotificationEvent.builder()
                         .type("F1")
                         .message(message)
                         .buttonLabel("Assistir F1TV →")
                         .buttonPath("https://f1tv.formula1.com/")
+                        .userId(targetUserId)
                         .build());
 
                 session.setNotified(true);
@@ -97,11 +107,14 @@ public class F1NotificationScheduler {
                     sb.append("🔹 ").append(news.get(i).title()).append("\n\n");
                 }
 
+                String targetUserId = (ownerUserId != null && !ownerUserId.isBlank()) ? ownerUserId : "1";
+
                 eventPublisher.publishEvent(NotificationEvent.builder()
                         .type("F1")
                         .message(sb.toString().trim())
                         .buttonLabel("Ver no LifeOS →")
                         .buttonPath("/f1")
+                        .userId(targetUserId)
                         .build());
             }
         } finally {

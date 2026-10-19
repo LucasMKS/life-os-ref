@@ -15,13 +15,16 @@ import {
   Filter,
   Trophy,
   Sliders,
+  Film,
+  Tv,
+  CloudSun,
 } from "lucide-react";
 import { notificationApi } from "@/lib/api";
 import { AppNotification } from "@/lib/types";
 import { toast } from "sonner";
 import { NotificationSettingsView } from "./notification-settings-view";
 
-type FilterType = "ALL" | "SPORTS" | "F1" | "FINANCE" | "GAMING" | "READING" | "SYSTEM";
+type FilterType = "ALL" | "SPORTS" | "F1" | "FINANCE" | "GAMING" | "READING" | "MEDIA" | "TWITCH" | "WEATHER" | "SYSTEM";
 
 const FILTERS: { label: string; value: FilterType; color: string; activeClass: string }[] = [
   { label: "Todas", value: "ALL", color: "text-zinc-400", activeClass: "bg-white/10 border-white/20 text-white" },
@@ -30,6 +33,9 @@ const FILTERS: { label: string; value: FilterType; color: string; activeClass: s
   { label: "Finanças", value: "FINANCE", color: "text-amber-400", activeClass: "bg-amber-500/10 border-amber-500/30 text-amber-400" },
   { label: "Gaming", value: "GAMING", color: "text-blue-400", activeClass: "bg-blue-500/10 border-blue-500/30 text-blue-400" },
   { label: "Leitura", value: "READING", color: "text-emerald-400", activeClass: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" },
+  { label: "Mídia", value: "MEDIA", color: "text-purple-400", activeClass: "bg-purple-500/10 border-purple-500/30 text-purple-400" },
+  { label: "Twitch", value: "TWITCH", color: "text-violet-400", activeClass: "bg-violet-500/10 border-violet-500/30 text-violet-400" },
+  { label: "Clima", value: "WEATHER", color: "text-cyan-400", activeClass: "bg-cyan-500/10 border-cyan-500/30 text-cyan-400" },
 ];
 
 const getIcon = (type: string) => {
@@ -39,6 +45,9 @@ const getIcon = (type: string) => {
     case "FINANCE": return <Wallet className="text-amber-400" size={15} />;
     case "GAMING": return <Gamepad2 className="text-blue-400" size={15} />;
     case "READING": return <BookOpen className="text-emerald-400" size={15} />;
+    case "MEDIA": return <Film className="text-purple-400" size={15} />;
+    case "TWITCH": return <Tv className="text-violet-400" size={15} />;
+    case "WEATHER": return <CloudSun className="text-cyan-400" size={15} />;
     default: return <BellRing className="text-zinc-400" size={15} />;
   }
 };
@@ -50,6 +59,9 @@ const getBgColor = (type: string) => {
     case "FINANCE": return "bg-amber-500/10 border-amber-500/20";
     case "GAMING": return "bg-blue-500/10 border-blue-500/20";
     case "READING": return "bg-emerald-500/10 border-emerald-500/20";
+    case "MEDIA": return "bg-purple-500/10 border-purple-500/20";
+    case "TWITCH": return "bg-violet-500/10 border-violet-500/20";
+    case "WEATHER": return "bg-cyan-500/10 border-cyan-500/20";
     default: return "bg-white/5 border-white/10";
   }
 };

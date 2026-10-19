@@ -61,6 +61,9 @@ public class TwitchService {
     @Value("${twitch.client-secret}")
     private String clientSecret;
 
+    @Value("${app.bot-user-id:}")
+    private String ownerUserId;
+
     private String appAccessToken = null;
 
     private final String REDIS_KEY_PREFIX = "twitch_live_user:";
@@ -103,6 +106,14 @@ public class TwitchService {
                 .collect(Collectors.toSet());
 
         Map<String, TwitchStreamDTO> liveStreamsByChannelName = new HashMap<>();
+
+        Map<String, Set<String>> usersByChannel = new HashMap<>();
+        for (UserTrackedTwitchChannel c : allTrackedChannels) {
+            if (c.getChannelName() != null && c.getUserId() != null) {
+                usersByChannel.computeIfAbsent(c.getChannelName().trim().toLowerCase(), k -> new HashSet<>())
+                        .add(c.getUserId());
+            }
+        }
 
         try {
             String responseBody = twitchApiWebClient.get()
@@ -155,13 +166,22 @@ public class TwitchService {
                         );
 
                         String channelUrl = "https://twitch.tv/" + canonicalChannel;
-                        eventPublisher.publishEvent(com.lifeos.shared.event.NotificationEvent.builder()
-                                .type("TWITCH")
-                                .message(messageText)
-                                .buttonLabel("Assistir agora →")
-                                .buttonPath(channelUrl)
-                                .build());
-                        log.info("Notificação enviada para {} e registrada no Anti-Spam (chave={})", userName, notifiedKey);
+                        Set<String> targetUsers = usersByChannel.getOrDefault(canonicalChannel, Collections.emptySet());
+                        if (targetUsers.isEmpty()) {
+                            String fallbackUser = (ownerUserId != null && !ownerUserId.isBlank()) ? ownerUserId : "1";
+                            targetUsers = Set.of(fallbackUser);
+                        }
+
+                        for (String targetUserId : targetUsers) {
+                            eventPublisher.publishEvent(com.lifeos.shared.event.NotificationEvent.builder()
+                                    .userId(targetUserId)
+                                    .type("TWITCH")
+                                    .message(messageText)
+                                    .buttonLabel("Assistir agora →")
+                                    .buttonPath(channelUrl)
+                                    .build());
+                        }
+                        log.info("Notificação enviada para {} e registrada no Anti-Spam (chave={}) para {} usuários", userName, notifiedKey, targetUsers.size());
                     }
                 }
             }

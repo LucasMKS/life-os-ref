@@ -56,8 +56,8 @@ public class SportsNotificationScheduler {
         }
 
         try {
-            List<UserTrackedSportsTeam> activeTeams = trackedTeamRepository.findByNotifyMatchesTrue();
-            List<UserTrackedSportsLeague> activeLeagues = trackedLeagueRepository.findByNotifyMatchesTrue();
+            List<UserTrackedSportsTeam> activeTeams = trackedTeamRepository.findAll();
+            List<UserTrackedSportsLeague> activeLeagues = trackedLeagueRepository.findAll();
 
             if (activeTeams.isEmpty() && activeLeagues.isEmpty()) {
                 return;
@@ -66,22 +66,49 @@ public class SportsNotificationScheduler {
             // Sync scoreboards for leagues that have active subscribers
             Set<String> leaguesToSync = new HashSet<>();
             Map<String, String> leagueSportMap = new HashMap<>();
+            boolean hasSoccerTeam = false;
+
             for (UserTrackedSportsLeague l : activeLeagues) {
-                leaguesToSync.add(l.getLeague());
-                leagueSportMap.put(l.getLeague(), l.getSport());
+                if (l.getLeague() != null) {
+                    leaguesToSync.add(l.getLeague());
+                    leagueSportMap.put(l.getLeague(), l.getSport() != null ? l.getSport() : "soccer");
+                }
             }
             for (UserTrackedSportsTeam t : activeTeams) {
-                leaguesToSync.add(t.getLeague());
-                leagueSportMap.putIfAbsent(t.getLeague(), t.getSport());
+                if (t.getLeague() != null) {
+                    leaguesToSync.add(t.getLeague());
+                    leagueSportMap.putIfAbsent(t.getLeague(), t.getSport() != null ? t.getSport() : "soccer");
+                }
+                if ("soccer".equalsIgnoreCase(t.getSport())) {
+                    hasSoccerTeam = true;
+                }
             }
 
-            String todayStr = LocalDate.now(SAO_PAULO_ZONE).format(DateTimeFormatter.BASIC_ISO_DATE);
+            // Times de futebol brasileiros (ex: Cruzeiro) disputam Copa do Brasil, Libertadores, etc.
+            if (hasSoccerTeam) {
+                List<String> soccerLeagues = List.of("bra.1", "bra.copa_do_brazil", "conmebol.libertadores", "uefa.champions", "fifa.friendly", "fifa.world");
+                for (String sl : soccerLeagues) {
+                    leaguesToSync.add(sl);
+                    leagueSportMap.putIfAbsent(sl, "soccer");
+                }
+            }
+
+            LocalDate todayDate = LocalDate.now(SAO_PAULO_ZONE);
+            List<String> datesToSync = new ArrayList<>();
+            datesToSync.add(todayDate.format(DateTimeFormatter.BASIC_ISO_DATE));
+            // À noite em Brasília (após as 20h), jogos das 21h30+ caem no dia seguinte em UTC
+            if (java.time.LocalTime.now(SAO_PAULO_ZONE).getHour() >= 20) {
+                datesToSync.add(todayDate.plusDays(1).format(DateTimeFormatter.BASIC_ISO_DATE));
+            }
+
             for (String league : leaguesToSync) {
                 String sport = leagueSportMap.getOrDefault(league, "soccer");
-                try {
-                    sportsService.getScoreboard(sport, league, todayStr);
-                } catch (Exception e) {
-                    log.debug("Sync scoreboard check for {}/{}: {}", sport, league, e.getMessage());
+                for (String dateStr : datesToSync) {
+                    try {
+                        sportsService.getScoreboard(sport, league, dateStr);
+                    } catch (Exception e) {
+                        log.debug("Sync scoreboard check for {}/{}/{}: {}", sport, league, dateStr, e.getMessage());
+                    }
                 }
             }
 
@@ -97,15 +124,33 @@ public class SportsNotificationScheduler {
 
                 // Match by tracked league
                 for (UserTrackedSportsLeague l : activeLeagues) {
-                    if (l.getLeague().equalsIgnoreCase(match.getLeague())) {
+                    if (l.getLeague() != null && l.getLeague().equalsIgnoreCase(match.getLeague())) {
                         recipientUserIds.add(l.getUserId());
                     }
                 }
 
-                // Match by tracked teams
+                // Match by tracked teams (por ID com .trim() ou por nome com normalização de acentos)
+                String homeId = match.getHomeTeamId() != null ? match.getHomeTeamId().trim() : "";
+                String awayId = match.getAwayTeamId() != null ? match.getAwayTeamId().trim() : "";
+                String homeNameNorm = com.lifeos.modules.sports.service.SportsCatalogSearchService.normalize(match.getHomeTeamName());
+                String awayNameNorm = com.lifeos.modules.sports.service.SportsCatalogSearchService.normalize(match.getAwayTeamName());
+
                 for (UserTrackedSportsTeam t : activeTeams) {
-                    if (t.getSport() != null && t.getSport().equalsIgnoreCase(match.getSport()) &&
-                            (t.getTeamId().equals(match.getHomeTeamId()) || t.getTeamId().equals(match.getAwayTeamId()))) {
+                    if (t.getSport() == null || match.getSport() == null || !t.getSport().equalsIgnoreCase(match.getSport())) {
+                        continue;
+                    }
+
+                    String tId = t.getTeamId() != null ? t.getTeamId().trim() : "";
+                    boolean idMatch = !tId.isEmpty() && (tId.equalsIgnoreCase(homeId) || tId.equalsIgnoreCase(awayId));
+
+                    boolean nameMatch = false;
+                    if (!idMatch && t.getTeamName() != null && !t.getTeamName().isBlank()) {
+                        String tNameNorm = com.lifeos.modules.sports.service.SportsCatalogSearchService.normalize(t.getTeamName());
+                        nameMatch = (!homeNameNorm.isEmpty() && homeNameNorm.contains(tNameNorm)) ||
+                                    (!awayNameNorm.isEmpty() && awayNameNorm.contains(tNameNorm));
+                    }
+
+                    if (idMatch || nameMatch) {
                         recipientUserIds.add(t.getUserId());
                     }
                 }
@@ -121,14 +166,18 @@ public class SportsNotificationScheduler {
                             : "em breve";
 
                     String leagueDisplay = SportsTranslationHelper.translateLeagueName(match.getLeague());
+                    String homeDisplay = (match.getHomeTeamName() != null && !match.getHomeTeamName().isBlank())
+                            ? match.getHomeTeamName() : "Casa";
+                    String awayDisplay = (match.getAwayTeamName() != null && !match.getAwayTeamName().isBlank())
+                            ? match.getAwayTeamName() : "Fora";
 
                     String message = String.format(
                             "%s <b>Jogo começando em 15 minutos!</b>\n\n" +
                             "<b>%s</b> x <b>%s</b>\n" +
                             "🏆 %s - Horário: %s%s",
                             sportEmoji,
-                            match.getHomeTeamName(),
-                            match.getAwayTeamName(),
+                            homeDisplay,
+                            awayDisplay,
                             leagueDisplay,
                             kickoffTime,
                             venueText
@@ -136,7 +185,7 @@ public class SportsNotificationScheduler {
 
                     for (String userId : recipientUserIds) {
                         sendWithButton("notify.sports", message, "Ver no LifeOS →", "/sports", userId);
-                        log.info("Dispatched 15m sports notification for match {} to user {}", match.getName(), userId);
+                        log.info("Dispatched 15m sports notification for match {} ({}) to user {}", match.getName(), match.getId(), userId);
                     }
                 }
 

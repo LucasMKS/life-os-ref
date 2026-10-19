@@ -600,6 +600,8 @@ public class SportsService {
     public void syncMatchesToDatabase(List<SportMatchDTO> dtos) {
         if (dtos == null || dtos.isEmpty()) return;
 
+        LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
+
         for (SportMatchDTO dto : dtos) {
             if (dto.getId() == null || dto.getId().isBlank()) continue;
 
@@ -613,15 +615,42 @@ public class SportsService {
                 match.setDisplayClock(dto.getDisplayClock());
                 if (dto.getHomeTeam() != null) {
                     match.setHomeScore(dto.getHomeTeam().getScore());
+                    if (match.getHomeTeamId() == null || match.getHomeTeamId().isBlank()) {
+                        match.setHomeTeamId(dto.getHomeTeam().getId() != null ? dto.getHomeTeam().getId() : "");
+                    }
+                    if (match.getHomeTeamName() == null || match.getHomeTeamName().isBlank()) {
+                        String hName = (dto.getHomeTeam().getName() != null && !dto.getHomeTeam().getName().isBlank())
+                                ? dto.getHomeTeam().getName() : dto.getHomeTeam().getDisplayName();
+                        match.setHomeTeamName(hName != null ? hName : "");
+                    }
+                    if (dto.getHomeTeam().getLogoUrl() != null && (match.getHomeTeamLogo() == null || match.getHomeTeamLogo().isBlank())) {
+                        match.setHomeTeamLogo(dto.getHomeTeam().getLogoUrl());
+                    }
                 }
                 if (dto.getAwayTeam() != null) {
                     match.setAwayScore(dto.getAwayTeam().getScore());
+                    if (match.getAwayTeamId() == null || match.getAwayTeamId().isBlank()) {
+                        match.setAwayTeamId(dto.getAwayTeam().getId() != null ? dto.getAwayTeam().getId() : "");
+                    }
+                    if (match.getAwayTeamName() == null || match.getAwayTeamName().isBlank()) {
+                        String aName = (dto.getAwayTeam().getName() != null && !dto.getAwayTeam().getName().isBlank())
+                                ? dto.getAwayTeam().getName() : dto.getAwayTeam().getDisplayName();
+                        match.setAwayTeamName(aName != null ? aName : "");
+                    }
+                    if (dto.getAwayTeam().getLogoUrl() != null && (match.getAwayTeamLogo() == null || match.getAwayTeamLogo().isBlank())) {
+                        match.setAwayTeamLogo(dto.getAwayTeam().getLogoUrl());
+                    }
                 }
                 if (dto.getBroadcast() != null) {
                     match.setBroadcast(dto.getBroadcast());
                 }
                 if (dto.getDate() != null) {
+                    LocalDateTime oldDate = match.getMatchDate();
                     match.setMatchDate(dto.getDate());
+                    // Se a data mudou e agora está mais de 20 minutos no futuro, resetar alerta de 15m
+                    if (oldDate != null && !oldDate.equals(dto.getDate()) && dto.getDate().isAfter(nowUtc.plusMinutes(20))) {
+                        match.setNotified15m(false);
+                    }
                 }
             } else {
                 match = mapDtoToEntity(dto);
@@ -733,7 +762,9 @@ public class SportsService {
 
         if (dto.getHomeTeam() != null) {
             match.setHomeTeamId(dto.getHomeTeam().getId() != null ? dto.getHomeTeam().getId() : "");
-            match.setHomeTeamName(dto.getHomeTeam().getName() != null ? dto.getHomeTeam().getName() : dto.getHomeTeam().getDisplayName());
+            String homeName = (dto.getHomeTeam().getName() != null && !dto.getHomeTeam().getName().isBlank())
+                    ? dto.getHomeTeam().getName() : dto.getHomeTeam().getDisplayName();
+            match.setHomeTeamName(homeName != null ? homeName : "");
             match.setHomeTeamAbbr(dto.getHomeTeam().getAbbreviation());
             match.setHomeTeamLogo(dto.getHomeTeam().getLogoUrl());
             match.setHomeTeamColor(dto.getHomeTeam().getColor());
@@ -745,7 +776,9 @@ public class SportsService {
 
         if (dto.getAwayTeam() != null) {
             match.setAwayTeamId(dto.getAwayTeam().getId() != null ? dto.getAwayTeam().getId() : "");
-            match.setAwayTeamName(dto.getAwayTeam().getName() != null ? dto.getAwayTeam().getName() : dto.getAwayTeam().getDisplayName());
+            String awayName = (dto.getAwayTeam().getName() != null && !dto.getAwayTeam().getName().isBlank())
+                    ? dto.getAwayTeam().getName() : dto.getAwayTeam().getDisplayName();
+            match.setAwayTeamName(awayName != null ? awayName : "");
             match.setAwayTeamAbbr(dto.getAwayTeam().getAbbreviation());
             match.setAwayTeamLogo(dto.getAwayTeam().getLogoUrl());
             match.setAwayTeamColor(dto.getAwayTeam().getColor());
