@@ -855,8 +855,13 @@ export const sportsApi = {
         params: { sport, league },
         timeout: 4000,
       });
-      if (response.data && (response.data.teamStats || response.data.boxscore || response.data.header)) {
-        return response.data;
+      if (response.data) {
+        // If it's already an application MatchSummary (has teamStats and not raw boxscore)
+        if (response.data.teamStats && !response.data.boxscore) {
+          return response.data;
+        }
+        // Otherwise it's raw ESPN JsonNode from backend -> normalize it
+        return parseEspnMatchSummary(response.data, sport, league, eventId);
       }
     } catch {
       // Backend route not yet deployed or temporary failure -> seamless ESPN fallback
@@ -869,94 +874,235 @@ export const sportsApi = {
         : league;
     const url = `https://site.api.espn.com/apis/site/v2/sports/${(sport || "soccer").toLowerCase()}/${cleanLeague}/summary?event=${eventId}`;
     const directRes = await axios.get(url, { timeout: 8000 });
-    const data = directRes.data;
+    return parseEspnMatchSummary(directRes.data, sport, league, eventId);
+  },
+};
 
-    // Parse into structured MatchSummary
-    const comp = data.header?.competitions?.[0] || {};
-    const competitors = comp.competitors || [];
-    const homeComp = competitors.find((c: any) => c.homeAway === "home") || competitors[0];
-    const awayComp = competitors.find((c: any) => c.homeAway === "away") || competitors[1];
-
-    const boxTeams = data.boxscore?.teams || [];
-    const homeBox = boxTeams.find((bt: any) => bt.team?.id === homeComp?.team?.id || bt.team?.id === homeComp?.id) || boxTeams[0];
-    const awayBox = boxTeams.find((bt: any) => bt.team?.id === awayComp?.team?.id || bt.team?.id === awayComp?.id) || boxTeams[1];
-
-    const gamecastLink = comp.links?.find((l: any) => l.rel?.includes("summary") || l.text === "Gamecast")?.href;
-
-    const rawLeaders = data.leaders || [];
-    const leaders = rawLeaders.map((teamLead: any) => ({
-      teamId: teamLead.team?.id,
-      displayName: teamLead.team?.displayName,
-      leaders: (teamLead.leaders || []).map((cat: any) => ({
-        name: cat.name,
-        displayName: cat.displayName,
-        leaders: (cat.leaders || []).map((l: any) => ({
-          displayValue: l.displayValue,
-          value: l.value,
-          athlete: {
-            id: l.athlete?.id,
-            displayName: l.athlete?.displayName,
-            shortName: l.athlete?.shortName,
-            jersey: l.athlete?.jersey,
-            position: l.athlete?.position?.abbreviation || l.athlete?.position?.displayName,
-            headshot: l.athlete?.headshot?.href || l.athlete?.headshot,
-          },
-        })),
-      })),
-    }));
-
-    const keyEvents = (data.keyEvents || []).map((ke: any) => ({
-      id: ke.id,
-      type: ke.type?.type || ke.type?.id,
-      typeText: ke.type?.text,
-      text: ke.text,
-      shortText: ke.shortText,
-      clock: ke.clock?.displayValue,
-      teamId: ke.team?.id,
-      teamName: ke.team?.displayName,
-      scoringPlay: ke.scoringPlay,
-      athleteName: ke.participants?.[0]?.athlete?.displayName,
-    }));
-
+/**
+ * Normaliza a resposta JSON bruta da API da ESPN (ou do proxy do backend)
+ * em um objeto MatchSummary tipado e seguro para renderização no frontend.
+ */
+export function parseEspnMatchSummary(
+  data: any,
+  sport: string,
+  league: string,
+  eventId: string
+): MatchSummary {
+  if (!data) {
     return {
       id: eventId,
       sport,
       league,
-      gamecastUrl: gamecastLink,
-      attendance: data.gameInfo?.attendance,
-      officials: (data.gameInfo?.officials || []).map((o: any) => ({
-        fullName: o.fullName,
-        displayName: o.displayName,
-        position: o.position?.displayName || o.position?.name || "Árbitro",
-      })),
-      venue: data.gameInfo?.venue
-        ? {
-            name: data.gameInfo.venue.fullName || data.gameInfo.venue.displayName || "",
-            city: data.gameInfo.venue.address?.city,
-            country: data.gameInfo.venue.address?.country,
-          }
-        : undefined,
-      broadcasts: (data.broadcasts || comp.broadcasts || [])
-        .map((b: any) => b.names?.[0] || b.market)
-        .filter(Boolean),
-      homeLineScores: homeComp?.linescores || [],
-      awayLineScores: awayComp?.linescores || [],
-      teamStats: {
-        home: (homeBox?.statistics || []).map((s: any) => ({
-          name: s.name,
-          label: s.label,
-          displayValue: s.displayValue,
-        })),
-        away: (awayBox?.statistics || []).map((s: any) => ({
-          name: s.name,
-          label: s.label,
-          displayValue: s.displayValue,
-        })),
-      },
-      keyEvents,
-      leaders,
+      broadcasts: [],
+      officials: [],
+      homeLineScores: [],
+      awayLineScores: [],
+      teamStats: { home: [], away: [] },
+      keyEvents: [],
+      leaders: [],
     };
-  },
-};
+  }
+
+  const comp = data.header?.competitions?.[0] || {};
+  const competitors = comp.competitors || [];
+  const homeComp =
+    competitors.find((c: any) => c.homeAway === "home") || competitors[0];
+  const awayComp =
+    competitors.find((c: any) => c.homeAway === "away") || competitors[1];
+
+  const boxTeams = data.boxscore?.teams || [];
+  const homeBox =
+    boxTeams.find(
+      (bt: any) =>
+        bt.homeAway === "home" ||
+        bt.team?.id === homeComp?.team?.id ||
+        bt.team?.id === homeComp?.id
+    ) || boxTeams[0];
+  const awayBox =
+    boxTeams.find(
+      (bt: any) =>
+        bt.homeAway === "away" ||
+        bt.team?.id === awayComp?.team?.id ||
+        bt.team?.id === awayComp?.id
+    ) || boxTeams[1];
+
+  const gamecastLink =
+    comp.links?.find(
+      (l: any) => l.rel?.includes("summary") || l.text === "Gamecast"
+    )?.href ||
+    data.header?.links?.find((l: any) => l.rel?.includes("summary"))?.href;
+
+  const rawLeaders = Array.isArray(data.leaders) ? data.leaders : [];
+  const leaders = rawLeaders.map((teamLead: any) => ({
+    teamId: String(teamLead.team?.id || ""),
+    displayName: String(teamLead.team?.displayName || teamLead.team?.name || ""),
+    leaders: (Array.isArray(teamLead.leaders) ? teamLead.leaders : []).map(
+      (cat: any) => ({
+        name: String(cat.name || ""),
+        displayName: String(cat.displayName || cat.name || ""),
+        leaders: (Array.isArray(cat.leaders) ? cat.leaders : []).map((l: any) => {
+          let headshotUrl: string | undefined = undefined;
+          if (typeof l.athlete?.headshot === "string") {
+            headshotUrl = l.athlete.headshot;
+          } else if (
+            l.athlete?.headshot &&
+            typeof l.athlete.headshot.href === "string"
+          ) {
+            headshotUrl = l.athlete.headshot.href;
+          }
+
+          return {
+            displayValue: String(l.displayValue ?? l.value ?? ""),
+            value: typeof l.value === "number" ? l.value : undefined,
+            athlete: {
+              id: String(l.athlete?.id || ""),
+              displayName: String(
+                l.athlete?.displayName || l.athlete?.fullName || ""
+              ),
+              shortName:
+                typeof l.athlete?.shortName === "string"
+                  ? l.athlete.shortName
+                  : undefined,
+              jersey:
+                typeof l.athlete?.jersey === "string" ||
+                typeof l.athlete?.jersey === "number"
+                  ? String(l.athlete.jersey)
+                  : undefined,
+              position:
+                typeof l.athlete?.position?.abbreviation === "string"
+                  ? l.athlete.position.abbreviation
+                  : typeof l.athlete?.position?.displayName === "string"
+                  ? l.athlete.position.displayName
+                  : undefined,
+              headshot: headshotUrl,
+            },
+          };
+        }),
+      })
+    ),
+  }));
+
+  const rawKeyEvents = Array.isArray(data.keyEvents) ? data.keyEvents : [];
+  const keyEvents = rawKeyEvents.map((ke: any) => {
+    const rawType =
+      typeof ke.type === "string"
+        ? ke.type
+        : ke.type?.type ||
+          ke.type?.text ||
+          (ke.type?.id ? String(ke.type.id) : "");
+    const rawTypeText =
+      typeof ke.typeText === "string"
+        ? ke.typeText
+        : ke.type?.text || "";
+    const rawText =
+      typeof ke.text === "string"
+        ? ke.text
+        : typeof ke.shortText === "string"
+        ? ke.shortText
+        : "";
+    const rawShortText =
+      typeof ke.shortText === "string" ? ke.shortText : undefined;
+
+    return {
+      id: String(ke.id || Math.random().toString(36).slice(2)),
+      type: String(rawType || ""),
+      typeText: String(rawTypeText || ""),
+      text: String(rawText || ""),
+      shortText: rawShortText,
+      clock:
+        ke.clock?.displayValue ||
+        (ke.clock?.value != null ? `${ke.clock.value}'` : undefined),
+      teamId: ke.team?.id ? String(ke.team.id) : undefined,
+      teamName: ke.team?.displayName || ke.team?.name,
+      scoringPlay: Boolean(ke.scoringPlay),
+      athleteName:
+        ke.participants?.[0]?.athlete?.displayName ||
+        ke.athlete?.displayName,
+    };
+  });
+
+  const rawBroadcasts = Array.isArray(data.broadcasts)
+    ? data.broadcasts
+    : Array.isArray(comp.broadcasts)
+    ? comp.broadcasts
+    : [];
+
+  const broadcasts: string[] = rawBroadcasts
+    .map((b: any) => {
+      if (!b) return "";
+      if (typeof b === "string") return b.trim();
+      if (typeof b.media?.name === "string") return b.media.name.trim();
+      if (typeof b.media?.shortName === "string") return b.media.shortName.trim();
+      if (Array.isArray(b.names) && b.names.length > 0) {
+        return b.names.filter((n: any) => typeof n === "string").join("/");
+      }
+      if (typeof b.name === "string") return b.name.trim();
+      if (typeof b.shortName === "string") return b.shortName.trim();
+      if (typeof b.market === "string") return b.market.trim();
+      return "";
+    })
+    .filter((b: string) => Boolean(b && b.length > 0));
+
+  const homeStats = Array.isArray(homeBox?.statistics)
+    ? homeBox.statistics.map((s: any) => ({
+        name: String(s.name || s.label || ""),
+        label: String(s.label || s.displayName || s.name || ""),
+        displayValue: String(s.displayValue ?? s.value ?? ""),
+      }))
+    : [];
+
+  const awayStats = Array.isArray(awayBox?.statistics)
+    ? awayBox.statistics.map((s: any) => ({
+        name: String(s.name || s.label || ""),
+        label: String(s.label || s.displayName || s.name || ""),
+        displayValue: String(s.displayValue ?? s.value ?? ""),
+      }))
+    : [];
+
+  return {
+    id: eventId,
+    sport,
+    league,
+    gamecastUrl: gamecastLink,
+    attendance:
+      typeof data.gameInfo?.attendance === "number"
+        ? data.gameInfo.attendance
+        : undefined,
+    officials: (Array.isArray(data.gameInfo?.officials)
+      ? data.gameInfo.officials
+      : []
+    ).map((o: any) => ({
+      fullName: String(o.fullName || o.displayName || ""),
+      displayName: String(o.displayName || o.fullName || ""),
+      position: String(
+        o.position?.displayName || o.position?.name || "Árbitro"
+      ),
+    })),
+    venue: data.gameInfo?.venue
+      ? {
+          name: String(
+            data.gameInfo.venue.fullName ||
+              data.gameInfo.venue.displayName ||
+              ""
+          ),
+          city: data.gameInfo.venue.address?.city,
+          country: data.gameInfo.venue.address?.country,
+        }
+      : undefined,
+    broadcasts,
+    homeLineScores: Array.isArray(homeComp?.linescores)
+      ? homeComp.linescores
+      : [],
+    awayLineScores: Array.isArray(awayComp?.linescores)
+      ? awayComp.linescores
+      : [],
+    teamStats: {
+      home: homeStats,
+      away: awayStats,
+    },
+    keyEvents,
+    leaders,
+  };
+}
 
 export default api;

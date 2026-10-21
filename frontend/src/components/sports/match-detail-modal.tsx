@@ -410,22 +410,27 @@ export function MatchDetailModal({
                       </div>
 
                       {summary.teamStats.home.map((hStat, idx) => {
-                        const aStat = summary.teamStats?.away?.[idx];
+                        const aStat =
+                          summary.teamStats?.away?.find(
+                            (a) => a.name && a.name === hStat.name
+                          ) || summary.teamStats?.away?.[idx];
                         const labelTranslated = translateStatLabel(
                           hStat.label || hStat.name
                         );
 
                         // Parse numeric values for comparison bar
                         const numH = parseFloat(
-                          (hStat.displayValue || "").replace("%", "")
+                          String(hStat.displayValue || "").replace("%", "")
                         );
                         const numA = parseFloat(
-                          (aStat?.displayValue || "").replace("%", "")
+                          String(aStat?.displayValue || "").replace("%", "")
                         );
 
-                        const total = (numH || 0) + (numA || 0);
+                        const total = (isNaN(numH) ? 0 : numH) + (isNaN(numA) ? 0 : numA);
                         const pctH =
-                          total > 0 ? Math.round((numH / total) * 100) : 50;
+                          total > 0 && !isNaN(numH)
+                            ? Math.min(100, Math.max(0, Math.round((numH / total) * 100)))
+                            : 50;
 
                         return (
                           <div key={hStat.name || idx} className="space-y-1.5">
@@ -490,21 +495,26 @@ export function MatchDetailModal({
                             {teamLeaders.leaders.map((cat) => {
                               const top = cat.leaders?.[0];
                               if (!top) return null;
+                              const headshotUrl =
+                                typeof top.athlete?.headshot === "string"
+                                  ? top.athlete.headshot
+                                  : (top.athlete?.headshot as any)?.href || undefined;
+
                               return (
                                 <div
                                   key={cat.name}
                                   className="flex items-center justify-between p-2 rounded-xl bg-black/30 border border-white/5"
                                 >
                                   <div className="flex items-center gap-2.5 min-w-0">
-                                    {top.athlete.headshot ? (
+                                    {headshotUrl ? (
                                       <img
-                                        src={top.athlete.headshot}
+                                        src={headshotUrl}
                                         alt=""
                                         className="w-8 h-8 rounded-full object-cover bg-zinc-800 shrink-0"
                                       />
                                     ) : (
                                       <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-400 font-bold flex items-center justify-center text-xs shrink-0">
-                                        {top.athlete.displayName?.slice(0, 1) || "A"}
+                                        {top.athlete?.displayName?.slice(0, 1) || "A"}
                                       </div>
                                     )}
                                     <div className="min-w-0">
@@ -531,19 +541,57 @@ export function MatchDetailModal({
                   summary?.keyEvents && summary.keyEvents.length > 0 ? (
                     <div className="space-y-2">
                       {summary.keyEvents.map((event) => {
+                        const rawType =
+                          typeof event.type === "string"
+                            ? event.type
+                            : (event.type as any)?.type ||
+                              (event.type as any)?.text ||
+                              (event.type as any)?.id ||
+                              "";
+                        const rawTypeText =
+                          typeof event.typeText === "string"
+                            ? event.typeText
+                            : (event.typeText as any)?.text || "";
+                        const rawText =
+                          typeof event.text === "string"
+                            ? event.text
+                            : typeof (event.text as any)?.text === "string"
+                            ? (event.text as any).text
+                            : "";
+                        const rawShortText =
+                          typeof event.shortText === "string"
+                            ? event.shortText
+                            : typeof (event.shortText as any)?.text === "string"
+                            ? (event.shortText as any).text
+                            : "";
+
+                        const typeLower = String(rawType || "").toLowerCase();
+                        const typeTextLower = String(rawTypeText || "").toLowerCase();
+                        const textLower = String(rawText || "").toLowerCase();
+
                         const isGoal =
-                          event.scoringPlay ||
-                          event.type?.toLowerCase().includes("goal") ||
-                          event.text?.toLowerCase().includes("goal");
+                          Boolean(event.scoringPlay) ||
+                          typeLower.includes("goal") ||
+                          typeLower.includes("gol") ||
+                          textLower.includes("goal") ||
+                          textLower.includes("gol");
                         const isCard =
-                          event.typeText?.toLowerCase().includes("card") ||
-                          event.text?.toLowerCase().includes("card");
+                          typeTextLower.includes("card") ||
+                          textLower.includes("card") ||
+                          textLower.includes("cartão") ||
+                          typeLower.includes("card");
                         const isRed =
-                          event.typeText?.toLowerCase().includes("red") ||
-                          event.text?.toLowerCase().includes("red");
+                          typeTextLower.includes("red") ||
+                          textLower.includes("red") ||
+                          textLower.includes("vermelho") ||
+                          typeLower.includes("red");
                         const isSub =
-                          event.type?.toLowerCase().includes("sub") ||
-                          event.text?.toLowerCase().includes("substitution");
+                          typeLower.includes("sub") ||
+                          textLower.includes("substitution") ||
+                          textLower.includes("substituição");
+
+                        const displayText =
+                          rawShortText || rawText || "Lance registrado";
 
                         return (
                           <div
@@ -566,7 +614,7 @@ export function MatchDetailModal({
 
                             <div className="flex-1 min-w-0">
                               <span className="font-semibold block">
-                                {event.shortText || event.text}
+                                {displayText}
                               </span>
                               {event.teamName && (
                                 <span className="text-[10px] text-zinc-400 block mt-0.5">
@@ -627,8 +675,23 @@ export function MatchDetailModal({
                       </span>
                       <span className="font-semibold text-white">
                         {summary?.broadcasts && summary.broadcasts.length > 0
-                          ? summary.broadcasts.join(", ")
-                          : match.broadcast || "Não divulgada"}
+                          ? summary.broadcasts
+                              .map((b: any) => {
+                                if (!b) return "";
+                                if (typeof b === "string") return b.trim();
+                                if (typeof b.media?.name === "string") return b.media.name.trim();
+                                if (typeof b.media?.shortName === "string") return b.media.shortName.trim();
+                                if (Array.isArray(b.names) && b.names.length > 0) {
+                                  return b.names.filter((n: any) => typeof n === "string").join("/");
+                                }
+                                if (typeof b.name === "string") return b.name.trim();
+                                if (typeof b.shortName === "string") return b.shortName.trim();
+                                if (typeof b.market === "string") return b.market.trim();
+                                return "";
+                              })
+                              .filter(Boolean)
+                              .join(", ") || (typeof match.broadcast === "string" ? match.broadcast : "") || "Não divulgada"
+                          : (typeof match.broadcast === "string" ? match.broadcast : "") || "Não divulgada"}
                       </span>
                     </div>
                   </div>
