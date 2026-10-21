@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -46,6 +47,8 @@ public class DynamicNotificationScheduler {
     private final SportsNotificationScheduler sportsNotificationScheduler;
 
     private final Set<String> localFallbackDispatched = ConcurrentHashMap.newKeySet();
+
+    private static final ZoneId BRT = ZoneId.of("America/Sao_Paulo");
 
     @org.springframework.beans.factory.annotation.Value("${app.bot-user-id:}")
     private String ownerUserId;
@@ -121,14 +124,17 @@ public class DynamicNotificationScheduler {
 
             // 4. Radar de Mídia (Lançamentos da watchlist)
             if (s.isMediaEnabled() && isWithinDispatchWindow(now, s.getMediaTime(), 30)) {
-                String key = "dyn_dispatch:media:" + userId + ":" + today;
+                String canonicalUserId = (ownerUserId != null && !ownerUserId.isBlank() && ("1".equals(userId) || ownerUserId.equalsIgnoreCase(userId)))
+                        ? ownerUserId
+                        : userId;
+                String key = "dyn_dispatch:media:" + canonicalUserId + ":" + today;
                 if (markDispatched(key)) {
-                    log.info("Disparando Radar de Mídia dinâmico para usuário {} às {}", userId, now);
+                    log.info("Disparando Radar de Mídia dinâmico para usuário {} (canônico: {}) às {}", userId, canonicalUserId, now);
                     try {
-                        mediaNotificationScheduler.notifyDailyMediaReleases();
+                        mediaNotificationScheduler.notifyDailyMediaReleasesForUser(canonicalUserId);
                     } catch (Exception e) {
                         clearDispatched(key);
-                        log.error("Erro ao executar notifyDailyMediaReleases para usuário {}: {}", userId, e.getMessage(), e);
+                        log.error("Erro ao executar notifyDailyMediaReleases para usuário {}: {}", canonicalUserId, e.getMessage(), e);
                     }
                 }
             }

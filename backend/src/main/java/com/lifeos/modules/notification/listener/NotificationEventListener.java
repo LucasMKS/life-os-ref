@@ -47,6 +47,22 @@ public class NotificationEventListener {
 
             String targetChatId = notificationSettingsService.getEffectiveChatId(userId);
 
+            // Salvaguarda rigorosa anti-duplicação no Telegram para Radar de Mídia Diário ("Lançamentos de Hoje")
+            // Garante que o mesmo chat/usuário receba exatamente 1 notificação agregada por dia
+            if (redisTemplate != null && "MEDIA".equalsIgnoreCase(type) && event.getMessage() != null
+                    && event.getMessage().contains("Lançamento")) {
+                String today = java.time.LocalDate.now(BRT).toString();
+                String targetOrOwner = (targetChatId != null && !targetChatId.isBlank())
+                        ? targetChatId
+                        : (ownerUserId != null && !ownerUserId.isBlank() ? ownerUserId : "default");
+                String radarChatDailyKey = "notif_media_radar_chat_daily:" + targetOrOwner + ":" + today;
+                Boolean isFirstRadar = redisTemplate.opsForValue().setIfAbsent(radarChatDailyKey, "1", java.time.Duration.ofHours(20));
+                if (Boolean.FALSE.equals(isFirstRadar)) {
+                    log.info("Notificação de radar de mídia diário já foi enviada hoje para o destino {}. Bloqueando disparo duplicado.", targetOrOwner);
+                    return;
+                }
+            }
+
             // Salvaguarda anti-duplicação no Telegram por conteúdo + chatId + dia
             if (redisTemplate != null && event.getMessage() != null) {
                 String today = java.time.LocalDate.now(BRT).toString();

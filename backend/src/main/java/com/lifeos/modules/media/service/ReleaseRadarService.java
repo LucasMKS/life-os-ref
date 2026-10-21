@@ -43,6 +43,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -91,8 +93,12 @@ public class ReleaseRadarService {
     private final SeriePreferenceRepository seriePreferenceRepository;
     private final UserTrackedMediaRepository userTrackedMediaRepository;
 
+    @org.springframework.beans.factory.annotation.Value("${app.bot-user-id:}")
+    private String ownerUserId;
+
     private static final String REDIS_RADAR_PREFIX = "gaming_release_radar:";
     private static final String REDIS_NOTIFIED_PREFIX = "radar_notified_today:";
+    private static final String REDIS_DAILY_RADAR_SENT_PREFIX = "radar_daily_sent:";
     private static final ZoneId SAO_PAULO_ZONE = ZoneId.of("America/Sao_Paulo");
     private static final int TMDB_PARALLEL_CALLS = 4;
 
@@ -683,6 +689,53 @@ public class ReleaseRadarService {
         return rawDate;
     }
 
+    public String resolveCanonicalUserId(String userId) {
+        if (userId == null || userId.isBlank() || isPlaceholderUser(userId)) {
+            return (ownerUserId != null && !ownerUserId.isBlank()) ? ownerUserId : "1";
+        }
+        if (ownerUserId != null && !ownerUserId.isBlank()) {
+            if ("1".equals(userId) || ownerUserId.equalsIgnoreCase(userId)) {
+                return ownerUserId;
+            }
+        }
+        return userId;
+    }
+
+    public boolean isOwner(String userId) {
+        if (userId == null || userId.isBlank()) return true;
+        if ("1".equals(userId)) return true;
+        return ownerUserId != null && !ownerUserId.isBlank() && ownerUserId.equalsIgnoreCase(userId);
+    }
+
+    public List<UserTrackedMedia> getEffectiveTrackedMediaForUser(String userId) {
+        String canonical = resolveCanonicalUserId(userId);
+        List<UserTrackedMedia> candidates = new ArrayList<>(userTrackedMediaRepository.findByUserId(canonical));
+
+        if (isOwner(canonical)) {
+            if (!"1".equals(canonical)) {
+                candidates.addAll(userTrackedMediaRepository.findByUserId("1"));
+            }
+            if (ownerUserId != null && !ownerUserId.isBlank() && !ownerUserId.equals(canonical)) {
+                candidates.addAll(userTrackedMediaRepository.findByUserId(ownerUserId));
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            candidates = userTrackedMediaRepository.findAll();
+        }
+
+        // Deduplica por tipo + tmdbId para unir qualquer fragmentação histórica entre aliases
+        Map<String, UserTrackedMedia> distinctMap = new LinkedHashMap<>();
+        for (UserTrackedMedia m : candidates) {
+            if (m.getTmdbId() != null && !m.getTmdbId().isBlank()) {
+                String type = (m.getMediaType() != null) ? m.getMediaType().toUpperCase() : "UNKNOWN";
+                String key = type + ":" + m.getTmdbId().trim();
+                distinctMap.putIfAbsent(key, m);
+            }
+        }
+        return new ArrayList<>(distinctMap.values());
+    }
+
     private void processBatchNotifications(List<ReleaseRadarDTO> releases, String userId) {
         if (isPlaceholderUser(userId)) {
             log.debug("Ignorando processBatchNotifications para userId placeholder: {}", userId);
@@ -692,9 +745,30 @@ public class ReleaseRadarService {
         LocalDate today = LocalDate.now(SAO_PAULO_ZONE);
         List<String> messages = new ArrayList<>();
         Set<String> processedInBatch = new HashSet<>();
-        String effectiveUserId = (userId != null && !userId.isBlank()) ? userId : "1";
+        String effectiveUserId = resolveCanonicalUserId(userId);
 
-        for (ReleaseRadarDTO dto : releases) {
+        // Trava para garantir rigorosamente 1 única notificação diária por usuário/proprietário
+        String dailySentKey = REDIS_DAILY_RADAR_SENT_PREFIX + effectiveUserId + ":" + today;
+        if (redisTemplate != null) {
+            try {
+                Boolean acquired = redisTemplate.opsForValue().setIfAbsent(dailySentKey, "true", Duration.ofHours(20));
+                if (Boolean.FALSE.equals(acquired)) {
+                    log.info("Radar de mídia diário já foi enviado hoje para o usuário {}. Ignorando notificação duplicada.", effectiveUserId);
+                    return;
+                }
+            } catch (Exception e) {
+                log.warn("Falha ao checar/registrar trava diária de radar no Redis: {}", e.getMessage());
+            }
+        }
+
+        // Ordena para que os Filmes apareçam no topo da lista e depois as Séries em ordem sequencial
+        List<ReleaseRadarDTO> sortedReleases = new ArrayList<>(releases);
+        sortedReleases.sort(Comparator.comparing((ReleaseRadarDTO d) -> "MOVIE".equalsIgnoreCase(d.type()) ? 0 : 1)
+                .thenComparing(ReleaseRadarDTO::title)
+                .thenComparing(d -> d.seasonNumber() != null ? d.seasonNumber() : 0)
+                .thenComparing(d -> d.episodeNumber() != null ? d.episodeNumber() : 0));
+
+        for (ReleaseRadarDTO dto : sortedReleases) {
             try {
                 LocalDate releaseDate = LocalDate.parse(dto.releaseDate());
                 if (today.equals(releaseDate)) {
@@ -706,16 +780,10 @@ public class ReleaseRadarService {
                         continue; // Evita itens repetidos no mesmo lote
                     }
 
-                    // Trava global por lançamento do dia para evitar duplicidade entre múltiplos userIds/apelidos
-                    String notifiedKey = REDIS_NOTIFIED_PREFIX + itemKey;
-                    Boolean acquired = redisTemplate.opsForValue().setIfAbsent(notifiedKey, "true", Duration.ofHours(48));
-
-                    if (Boolean.TRUE.equals(acquired)) {
-                        if ("SERIES".equals(dto.type())) {
-                            messages.add(String.format("📺 <b>%s</b> (S%02dE%02d)", dto.title(), dto.seasonNumber(), dto.episodeNumber()));
-                        } else {
-                            messages.add(String.format("🎬 <b>%s</b>", dto.title()));
-                        }
+                    if ("SERIES".equals(dto.type())) {
+                        messages.add(String.format("📺 <b>%s</b> (S%02dE%02d)", dto.title(), dto.seasonNumber(), dto.episodeNumber()));
+                    } else {
+                        messages.add(String.format("🎬 <b>%s</b>", dto.title()));
                     }
                 }
             } catch (Exception e) {
@@ -746,6 +814,13 @@ public class ReleaseRadarService {
                     .buttonPath(buttonUrl)
                     .build());
             log.info("Notificação de Radar agregada enviada com {} lançamentos para usuário {}.", messages.size(), effectiveUserId);
+        } else {
+            // Se não gerou nenhuma mensagem para hoje, libera a trava para nova checagem se houver sincronização posterior
+            if (redisTemplate != null) {
+                try {
+                    redisTemplate.delete(dailySentKey);
+                } catch (Exception ignored) {}
+            }
         }
     }
 
@@ -1578,40 +1653,58 @@ public class ReleaseRadarService {
             return;
         }
 
-        List<UserTrackedMedia> tracked = userTrackedMediaRepository.findByUserId(userId);
+        String canonicalUserId = resolveCanonicalUserId(userId);
+        LocalDate today = LocalDate.now(SAO_PAULO_ZONE);
+
+        // Trava diária prévia: se já foi enviado hoje para este usuário, nem gasta chamadas ao TMDB
+        String dailySentKey = REDIS_DAILY_RADAR_SENT_PREFIX + canonicalUserId + ":" + today;
+        if (redisTemplate != null) {
+            try {
+                String alreadySent = redisTemplate.opsForValue().get(dailySentKey);
+                if ("true".equalsIgnoreCase(alreadySent)) {
+                    log.info("Radar de mídia diário já foi enviado hoje para usuário {}. Pulando varredura.", canonicalUserId);
+                    return;
+                }
+            } catch (Exception e) {
+                log.warn("Falha ao checar dailySentKey no Redis: {}", e.getMessage());
+            }
+        }
+
+        List<UserTrackedMedia> tracked = getEffectiveTrackedMediaForUser(canonicalUserId);
         if (tracked == null || tracked.isEmpty()) {
-            log.debug("Nenhuma mídia rastreada no banco local para o usuário {}", userId);
+            log.debug("Nenhuma mídia rastreada no banco local para o usuário {}", canonicalUserId);
             return;
         }
 
-        log.info("Verificando lançamentos diários para usuário {} com {} mídias rastreadas", userId, tracked.size());
+        log.info("Verificando lançamentos diários para usuário {} com {} mídias rastreadas", canonicalUserId, tracked.size());
 
         List<String> movieIds = tracked.stream()
                 .filter(m -> "MOVIE".equalsIgnoreCase(m.getMediaType()))
                 .map(UserTrackedMedia::getTmdbId)
+                .distinct()
                 .toList();
 
         List<String> serieIds = tracked.stream()
                 .filter(m -> "SERIES".equalsIgnoreCase(m.getMediaType()))
                 .map(UserTrackedMedia::getTmdbId)
+                .distinct()
                 .toList();
 
         try {
             Flux<ReleaseRadarDTO> moviesFlux = Flux.fromIterable(movieIds)
-                    .flatMap(id -> fetchTmdbMovieReactive(id, userId), TMDB_PARALLEL_CALLS);
+                    .flatMap(id -> fetchTmdbMovieReactive(id, canonicalUserId), TMDB_PARALLEL_CALLS);
             Flux<ReleaseRadarDTO> seriesFlux = Flux.fromIterable(serieIds)
-                    .flatMap(id -> fetchTmdbSeriesReleasesReactive(id, userId), TMDB_PARALLEL_CALLS);
+                    .flatMap(id -> fetchTmdbSeriesReleasesReactive(id, canonicalUserId), TMDB_PARALLEL_CALLS);
 
             List<ReleaseRadarDTO> releases = Flux.merge(moviesFlux, seriesFlux)
                     .collectList()
                     .block();
 
             if (releases == null || releases.isEmpty()) {
-                log.info("Nenhum lançamento encontrado no TMDB para o usuário {}", userId);
+                log.info("Nenhum lançamento encontrado no TMDB para o usuário {}", canonicalUserId);
                 return;
             }
 
-            LocalDate today = LocalDate.now(SAO_PAULO_ZONE);
             List<ReleaseRadarDTO> todayReleases = releases.stream()
                     .filter(dto -> {
                         try {
@@ -1623,13 +1716,13 @@ public class ReleaseRadarService {
                     .toList();
 
             if (!todayReleases.isEmpty()) {
-                log.info("Encontrados {} lançamentos hoje para o usuário {}", todayReleases.size(), userId);
-                processBatchNotifications(todayReleases, userId);
+                log.info("Encontrados {} lançamentos hoje para o usuário {}", todayReleases.size(), canonicalUserId);
+                processBatchNotifications(todayReleases, canonicalUserId);
             } else {
-                log.info("Nenhum lançamento hoje para o usuário {}", userId);
+                log.info("Nenhum lançamento hoje para o usuário {}", canonicalUserId);
             }
         } catch (Exception e) {
-            log.error("Erro ao verificar lançamentos diários do TMDB para userId={}: {}", userId, e.getMessage(), e);
+            log.error("Erro ao verificar lançamentos diários do TMDB para userId={}: {}", canonicalUserId, e.getMessage(), e);
         }
     }
 
@@ -1637,9 +1730,16 @@ public class ReleaseRadarService {
      * Dispara a verificação diária de lançamentos para todos os usuários que possuem mídias acompanhadas.
      */
     public void checkAndNotifyDailyReleases() {
-        List<String> userIds = userTrackedMediaRepository.findDistinctUserIds();
-        log.info("Iniciando checkAndNotifyDailyReleases para {} usuários distintos", userIds.size());
-        for (String userId : userIds) {
+        List<String> rawUserIds = userTrackedMediaRepository.findDistinctUserIds();
+        Set<String> canonicalUserIds = new LinkedHashSet<>();
+        for (String u : rawUserIds) {
+            canonicalUserIds.add(resolveCanonicalUserId(u));
+        }
+        if (canonicalUserIds.isEmpty()) {
+            canonicalUserIds.add(resolveCanonicalUserId(null));
+        }
+        log.info("Iniciando checkAndNotifyDailyReleases para {} usuários canônicos distintos: {}", canonicalUserIds.size(), canonicalUserIds);
+        for (String userId : canonicalUserIds) {
             try {
                 checkDailyReleasesForUser(userId);
             } catch (Exception e) {
@@ -1656,12 +1756,33 @@ public class ReleaseRadarService {
             return;
         }
 
+        String canonicalUserId = resolveCanonicalUserId(userId);
+
         try {
             Set<String> activeTmdbIds = new HashSet<>();
             if (movieIds != null) activeTmdbIds.addAll(movieIds);
             if (serieIds != null) activeTmdbIds.addAll(serieIds);
 
-            List<UserTrackedMedia> existingMedia = userTrackedMediaRepository.findByUserId(userId);
+            List<UserTrackedMedia> existingMedia = new ArrayList<>(userTrackedMediaRepository.findByUserId(canonicalUserId));
+
+            // Migra mídias antigas gravadas com outros aliases (ex: '1' vs 'lucasmks') para o usuário canônico
+            if (isOwner(canonicalUserId)) {
+                if (!"1".equals(canonicalUserId)) {
+                    List<UserTrackedMedia> legacy = userTrackedMediaRepository.findByUserId("1");
+                    for (UserTrackedMedia m : legacy) {
+                        m.setUserId(canonicalUserId);
+                        existingMedia.add(m);
+                    }
+                }
+                if (ownerUserId != null && !ownerUserId.isBlank() && !ownerUserId.equals(canonicalUserId)) {
+                    List<UserTrackedMedia> legacy = userTrackedMediaRepository.findByUserId(ownerUserId);
+                    for (UserTrackedMedia m : legacy) {
+                        m.setUserId(canonicalUserId);
+                        existingMedia.add(m);
+                    }
+                }
+            }
+
             Map<String, UserTrackedMedia> existingMap = new HashMap<>();
             for (UserTrackedMedia m : existingMedia) {
                 existingMap.put(m.getTmdbId(), m);
@@ -1684,7 +1805,7 @@ public class ReleaseRadarService {
                     ReleaseRadarDTO dto = releaseMap.get(mId);
                     if (media == null) {
                         media = UserTrackedMedia.builder()
-                                .userId(userId)
+                                .userId(canonicalUserId)
                                 .tmdbId(mId)
                                 .mediaType("MOVIE")
                                 .status("PLAN_TO_WATCH")
@@ -1693,6 +1814,7 @@ public class ReleaseRadarService {
                                 .updatedAt(LocalDateTime.now(SAO_PAULO_ZONE))
                                 .build();
                     } else {
+                        media.setUserId(canonicalUserId);
                         media.setMediaType("MOVIE");
                         if (dto != null) {
                             if (dto.title() != null && !dto.title().isBlank()) media.setTitle(dto.title());
@@ -1710,7 +1832,7 @@ public class ReleaseRadarService {
                     ReleaseRadarDTO dto = releaseMap.get(sId);
                     if (media == null) {
                         media = UserTrackedMedia.builder()
-                                .userId(userId)
+                                .userId(canonicalUserId)
                                 .tmdbId(sId)
                                 .mediaType("SERIES")
                                 .status("WATCHING")
@@ -1719,6 +1841,7 @@ public class ReleaseRadarService {
                                 .updatedAt(LocalDateTime.now(SAO_PAULO_ZONE))
                                 .build();
                     } else {
+                        media.setUserId(canonicalUserId);
                         media.setMediaType("SERIES");
                         if (dto != null) {
                             if (dto.title() != null && !dto.title().isBlank()) media.setTitle(dto.title());
@@ -1732,7 +1855,7 @@ public class ReleaseRadarService {
 
             if (!toSave.isEmpty()) {
                 userTrackedMediaRepository.saveAll(toSave);
-                log.info("Watchlist local sincronizada: {} mídias salvas para o usuário {}", toSave.size(), userId);
+                log.info("Watchlist local sincronizada: {} mídias salvas para o usuário {}", toSave.size(), canonicalUserId);
             }
 
             // Remove itens que foram desmarcados na watchlist do lmsfavorite
@@ -1743,10 +1866,10 @@ public class ReleaseRadarService {
             if (!toDelete.isEmpty()) {
                 userTrackedMediaRepository.deleteAll(toDelete);
                 log.info("Watchlist local: removidas {} mídias não mais presentes na watchlist do lmsfavorite para o usuário {}",
-                        toDelete.size(), userId);
+                        toDelete.size(), canonicalUserId);
             }
         } catch (Exception e) {
-            log.error("Erro ao sincronizar watchlist local para usuário {}: {}", userId, e.getMessage(), e);
+            log.error("Erro ao sincronizar watchlist local para usuário {}: {}", canonicalUserId, e.getMessage(), e);
         }
     }
 }
