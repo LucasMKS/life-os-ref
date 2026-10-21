@@ -142,6 +142,7 @@ export function SportsDashboard() {
   } = useQuery<SportMatch[]>({
     queryKey: ["sports-day-matches", selectedDate, selectedLeagueFilter],
     queryFn: () => sportsApi.getDayMatches(selectedDate, selectedLeagueFilter),
+    staleTime: 1000 * 30, // 30s de dados frescos
     refetchInterval: (query) => {
       const data = query.state.data;
       const hasLiveMatch = data?.some(
@@ -154,19 +155,22 @@ export function SportsDashboard() {
     },
   });
 
-  // Query: Dedicated Live matches query for today (always monitored)
+  // Query: Dedicated Live matches query for today (apenas quando não estiver na aba "Hoje" + "Todas as Ligas")
+  const isViewingTodayAll = selectedDate === todayStr && selectedLeagueFilter === "ALL";
   const {
     data: todayAllMatches = [],
     refetch: refetchToday,
   } = useQuery<SportMatch[]>({
     queryKey: ["sports-day-matches-today-live", todayStr],
     queryFn: () => sportsApi.getDayMatches(todayStr, "ALL"),
+    enabled: !isViewingTodayAll, // DEDUP: Não duplica requisição pesada quando dayMatches já possui todos os dados de hoje
+    staleTime: 1000 * 30,
     refetchInterval: 30000,
   });
 
   // Live matches across all leagues
   const liveMatches = useMemo(() => {
-    const list = selectedDate === todayStr ? dayMatches : todayAllMatches;
+    const list = isViewingTodayAll ? dayMatches : todayAllMatches.length > 0 ? todayAllMatches : dayMatches;
     return list.filter((m) => {
       const s = (m.status || "").toUpperCase();
       return (
@@ -177,7 +181,7 @@ export function SportsDashboard() {
         s.includes("LIVE")
       );
     });
-  }, [selectedDate, todayStr, dayMatches, todayAllMatches]);
+  }, [isViewingTodayAll, dayMatches, todayAllMatches]);
 
   const liveMatchesCount = liveMatches.length;
 
@@ -192,7 +196,7 @@ export function SportsDashboard() {
       if (!preferences?.trackedTeams || preferences.trackedTeams.length === 0) {
         return [];
       }
-      const teamsToFetch = preferences.trackedTeams.slice(0, 10);
+      const teamsToFetch = preferences.trackedTeams.slice(0, 5);
       const promises = teamsToFetch.map((t) =>
         sportsApi.getTeamSchedule(t.sport, t.league, t.teamId).catch(() => [])
       );
@@ -221,10 +225,10 @@ export function SportsDashboard() {
         return db - da; // newest first
       });
 
-      return sorted.slice(0, 24);
+      return sorted.slice(0, 20);
     },
     enabled: Boolean(preferences?.trackedTeams && preferences.trackedTeams.length > 0),
-    staleTime: 1000 * 60 * 10,
+    staleTime: 1000 * 60 * 15,
   });
 
   // Group day matches by translated league when "ALL" is selected
@@ -296,7 +300,7 @@ export function SportsDashboard() {
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* 1. TOP HEADER: TÍTULO + AÇÕES RÁPIDAS */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 md:p-5 bg-[#121214]/60 backdrop-blur-xl border border-white/5 rounded-2xl shadow-lg">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 md:p-5 bg-[#121214]/70 backdrop-blur-md border border-white/5 rounded-2xl shadow-lg">
         <div>
           <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10px] md:text-xs font-bold tracking-widest uppercase bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mb-1.5">
             <Trophy className="w-3 h-3 text-emerald-400" />
@@ -347,7 +351,7 @@ export function SportsDashboard() {
 
       {/* 3. AO VIVO: TEMA VERDE/EMERALD HARMONIOSO E ALTURA DINÂMICA COMPACTA */}
       {liveMatchesCount > 0 && (
-        <div className="p-4 md:p-5 bg-[#121214]/90 backdrop-blur-xl border border-emerald-500/30 rounded-3xl shadow-[0_0_30px_rgba(16,185,129,0.08)] space-y-3 animate-in fade-in duration-300">
+        <div className="p-4 md:p-5 bg-[#121214]/90 backdrop-blur-md border border-emerald-500/30 rounded-3xl shadow-[0_0_30px_rgba(16,185,129,0.08)] space-y-3 animate-in fade-in duration-300">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
@@ -409,7 +413,7 @@ export function SportsDashboard() {
       )}
 
       {/* 4. BLOCO UNIFICADO: CENTRAL DE JOGOS & RESULTADOS */}
-      <div className="bg-[#121214]/80 backdrop-blur-xl border border-white/5 border-t-emerald-500/40 rounded-3xl p-5 md:p-6 lg:p-7 shadow-2xl relative overflow-hidden">
+      <div className="bg-[#121214]/85 backdrop-blur-md border border-white/5 border-t-emerald-500/40 rounded-3xl p-5 md:p-6 lg:p-7 shadow-2xl relative overflow-hidden">
         {/* Ambient radial glow */}
         <div className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-emerald-500/5 via-teal-500/5 to-transparent pointer-events-none opacity-60" />
 

@@ -12,6 +12,7 @@ import com.lifeos.modules.sports.repository.UserTrackedSportsLeagueRepository;
 import com.lifeos.modules.sports.repository.UserTrackedSportsTeamRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +24,8 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -242,42 +245,46 @@ public class SportsService {
         LocalDate targetLocalDate = parseLocalDate(date, SAO_PAULO_ZONE);
         String targetDateStr = targetLocalDate.format(DateTimeFormatter.BASIC_ISO_DATE);
 
-        Map<String, SportMatchDTO> matchMap = new LinkedHashMap<>();
+        Map<String, SportMatchDTO> matchMap = new ConcurrentHashMap<>();
 
-        for (Map.Entry<String, String> entry : leagueSportMap.entrySet()) {
-            String league = entry.getKey();
-            String sport = entry.getValue();
-            try {
-                ScoreboardResponseDTO scoreboard = getScoreboard(sport, league, targetDateStr);
-                if (scoreboard != null && scoreboard.getMatches() != null) {
-                    for (SportMatchDTO match : scoreboard.getMatches()) {
-                        // Strict date check in user timezone
-                        if (match.getDate() != null) {
-                            LocalDate matchLocalDate = match.getDate().atOffset(ZoneOffset.UTC)
-                                    .atZoneSameInstant(SAO_PAULO_ZONE).toLocalDate();
-                            if (!matchLocalDate.equals(targetLocalDate)) {
-                                continue;
+        List<CompletableFuture<Void>> futures = leagueSportMap.entrySet().stream()
+                .map(entry -> CompletableFuture.runAsync(() -> {
+                    String league = entry.getKey();
+                    String sport = entry.getValue();
+                    try {
+                        ScoreboardResponseDTO scoreboard = getScoreboard(sport, league, targetDateStr);
+                        if (scoreboard != null && scoreboard.getMatches() != null) {
+                            for (SportMatchDTO match : scoreboard.getMatches()) {
+                                // Strict date check in user timezone
+                                if (match.getDate() != null) {
+                                    LocalDate matchLocalDate = match.getDate().atOffset(ZoneOffset.UTC)
+                                            .atZoneSameInstant(SAO_PAULO_ZONE).toLocalDate();
+                                    if (!matchLocalDate.equals(targetLocalDate)) {
+                                        continue;
+                                    }
+                                }
+
+                                String matchSport = (match.getSport() != null && !match.getSport().isBlank())
+                                        ? match.getSport().toLowerCase() : (sport != null ? sport.toLowerCase() : "");
+                                boolean isLeagueTracked = trackedLeagueSlugs.contains(match.getLeague());
+                                boolean isHomeTracked = match.getHomeTeam() != null &&
+                                        trackedSportTeamKeys.contains(matchSport + "::" + match.getHomeTeam().getId());
+                                boolean isAwayTracked = match.getAwayTeam() != null &&
+                                        trackedSportTeamKeys.contains(matchSport + "::" + match.getAwayTeam().getId());
+
+                                if (isLeagueTracked || isHomeTracked || isAwayTracked) {
+                                    match.setUserTrackedMatch(true);
+                                    matchMap.put(match.getId(), match);
+                                }
                             }
                         }
-
-                        String matchSport = (match.getSport() != null && !match.getSport().isBlank())
-                                ? match.getSport().toLowerCase() : (sport != null ? sport.toLowerCase() : "");
-                        boolean isLeagueTracked = trackedLeagueSlugs.contains(match.getLeague());
-                        boolean isHomeTracked = match.getHomeTeam() != null &&
-                                trackedSportTeamKeys.contains(matchSport + "::" + match.getHomeTeam().getId());
-                        boolean isAwayTracked = match.getAwayTeam() != null &&
-                                trackedSportTeamKeys.contains(matchSport + "::" + match.getAwayTeam().getId());
-
-                        if (isLeagueTracked || isHomeTracked || isAwayTracked) {
-                            match.setUserTrackedMatch(true);
-                            matchMap.put(match.getId(), match);
-                        }
+                    } catch (Exception e) {
+                        log.warn("Error getting followed matches scoreboard for {}/{}: {}", sport, league, e.getMessage());
                     }
-                }
-            } catch (Exception e) {
-                log.warn("Error getting followed matches scoreboard for {}/{}: {}", sport, league, e.getMessage());
-            }
-        }
+                }))
+                .toList();
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
         // If external calls yielded nothing, fallback to DB query
         if (matchMap.isEmpty()) {
@@ -336,21 +343,25 @@ public class SportsService {
             targetLeagues = SUPPORTED_LEAGUES;
         }
 
-        Map<String, SportMatchDTO> matchMap = new LinkedHashMap<>();
+        Map<String, SportMatchDTO> matchMap = new ConcurrentHashMap<>();
 
-        // Fetch scoreboards for each target league
-        for (SportLeagueDTO league : targetLeagues) {
-            try {
-                ScoreboardResponseDTO scoreboard = getScoreboard(league.getSport(), league.getSlug(), targetDate);
-                if (scoreboard != null && scoreboard.getMatches() != null) {
-                    for (SportMatchDTO match : scoreboard.getMatches()) {
-                        matchMap.putIfAbsent(match.getId(), match);
+        // Fetch scoreboards for each target league in parallel
+        List<CompletableFuture<Void>> futures = targetLeagues.stream()
+                .map(league -> CompletableFuture.runAsync(() -> {
+                    try {
+                        ScoreboardResponseDTO scoreboard = getScoreboard(league.getSport(), league.getSlug(), targetDate);
+                        if (scoreboard != null && scoreboard.getMatches() != null) {
+                            for (SportMatchDTO match : scoreboard.getMatches()) {
+                                matchMap.putIfAbsent(match.getId(), match);
+                            }
+                        }
+                    } catch (Exception ex) {
+                        log.warn("Could not fetch day scoreboard for league {}: {}", league.getSlug(), ex.getMessage());
                     }
-                }
-            } catch (Exception ex) {
-                log.warn("Could not fetch day scoreboard for league {}: {}", league.getSlug(), ex.getMessage());
-            }
-        }
+                }))
+                .toList();
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
         List<SportMatchDTO> matches = new ArrayList<>(matchMap.values());
         matches.sort((a, b) -> {
@@ -405,6 +416,7 @@ public class SportsService {
      * Radar / Timeline of upcoming matches for user's tracked teams and leagues.
      * Looks ahead N days (default 14) from now. Excludes matches that have already finished.
      */
+    @Cacheable(value = "sports_radar", key = "#userId + '::' + (#daysAhead != null ? #daysAhead : 14)")
     public List<SportMatchDTO> getRadarMatches(String userId, Integer daysAhead) {
         int days = (daysAhead != null && daysAhead > 0) ? Math.min(daysAhead, 30) : 14;
         LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
@@ -417,47 +429,55 @@ public class SportsService {
             return Collections.emptyList();
         }
 
-        Map<String, SportMatchDTO> radarMap = new LinkedHashMap<>();
+        Map<String, SportMatchDTO> radarMap = new ConcurrentHashMap<>();
+        List<CompletableFuture<Void>> allFutures = new ArrayList<>();
 
-        // 1. For each tracked team: their schedule has their upcoming games
+        // 1. Parallelize schedule fetch for each tracked team
         for (UserTrackedSportsTeam team : trackedTeams) {
-            try {
-                List<SportMatchDTO> schedule = getTeamSchedule(team.getSport(), team.getLeague(), team.getTeamId());
-                if (schedule != null) {
-                    for (SportMatchDTO match : schedule) {
-                        if (shouldIncludeInRadar(match, nowUtc, limit)) {
-                            match.setUserTrackedMatch(true);
-                            radarMap.put(match.getId(), match);
-                        }
-                    }
-                }
-            } catch (Exception ex) {
-                log.warn("Error fetching schedule for tracked team {}: {}", team.getTeamName(), ex.getMessage());
-            }
-        }
-
-        // 2. For each tracked league: get matches from upcoming days or DB
-        LocalDate startDate = LocalDate.now(SAO_PAULO_ZONE);
-        for (int i = 0; i < Math.min(days, 7); i++) {
-            LocalDate d = startDate.plusDays(i);
-            String dateStr = d.format(DateTimeFormatter.BASIC_ISO_DATE);
-
-            for (UserTrackedSportsLeague league : trackedLeagues) {
+            allFutures.add(CompletableFuture.runAsync(() -> {
                 try {
-                    ScoreboardResponseDTO sb = getScoreboard(league.getSport(), league.getLeague(), dateStr);
-                    if (sb != null && sb.getMatches() != null) {
-                        for (SportMatchDTO m : sb.getMatches()) {
-                            if (shouldIncludeInRadar(m, nowUtc, limit)) {
-                                m.setUserTrackedMatch(true);
-                                radarMap.put(m.getId(), m);
+                    List<SportMatchDTO> schedule = getTeamSchedule(team.getSport(), team.getLeague(), team.getTeamId());
+                    if (schedule != null) {
+                        for (SportMatchDTO match : schedule) {
+                            if (shouldIncludeInRadar(match, nowUtc, limit)) {
+                                match.setUserTrackedMatch(true);
+                                radarMap.put(match.getId(), match);
                             }
                         }
                     }
                 } catch (Exception ex) {
-                    log.warn("Error fetching scoreboard for tracked league {}: {}", league.getLeague(), ex.getMessage());
+                    log.warn("Error fetching schedule for tracked team {}: {}", team.getTeamName(), ex.getMessage());
                 }
+            }));
+        }
+
+        // 2. Parallelize scoreboard fetches for tracked leagues over upcoming days
+        LocalDate startDate = LocalDate.now(SAO_PAULO_ZONE);
+        int daysToCheck = Math.min(days, 7);
+        for (int i = 0; i < daysToCheck; i++) {
+            LocalDate d = startDate.plusDays(i);
+            String dateStr = d.format(DateTimeFormatter.BASIC_ISO_DATE);
+
+            for (UserTrackedSportsLeague league : trackedLeagues) {
+                allFutures.add(CompletableFuture.runAsync(() -> {
+                    try {
+                        ScoreboardResponseDTO sb = getScoreboard(league.getSport(), league.getLeague(), dateStr);
+                        if (sb != null && sb.getMatches() != null) {
+                            for (SportMatchDTO m : sb.getMatches()) {
+                                if (shouldIncludeInRadar(m, nowUtc, limit)) {
+                                    m.setUserTrackedMatch(true);
+                                    radarMap.put(m.getId(), m);
+                                }
+                            }
+                        }
+                    } catch (Exception ex) {
+                        log.warn("Error fetching scoreboard for tracked league {}: {}", league.getLeague(), ex.getMessage());
+                    }
+                }));
             }
         }
+
+        CompletableFuture.allOf(allFutures.toArray(new CompletableFuture[0])).join();
 
         // 3. Fallback / supplement: check database for any synced matches for user's tracked teams & leagues
         Set<String> trackedSportTeamKeys = trackedTeams.stream()
@@ -502,6 +522,7 @@ public class SportsService {
     // -------------------------------------------------------------
 
     @Transactional
+    @CacheEvict(value = "sports_radar", allEntries = true)
     public UserTrackedSportsTeam trackTeam(String userId, TrackTeamRequest request) {
         String normalizedLeague = espnSportsClient.normalizeLeague(request.getLeague());
         String normalizedSport = request.getSport() != null ? request.getSport().trim().toLowerCase() : "soccer";
@@ -538,6 +559,7 @@ public class SportsService {
     }
 
     @Transactional
+    @CacheEvict(value = "sports_radar", allEntries = true)
     public void untrackTeam(String userId, String teamId, String sport) {
         if (sport != null && !sport.isBlank()) {
             trackedTeamRepository.deleteByUserIdAndSportAndTeamId(userId, sport.trim().toLowerCase(), teamId);
@@ -547,11 +569,13 @@ public class SportsService {
     }
 
     @Transactional
+    @CacheEvict(value = "sports_radar", allEntries = true)
     public void untrackTeam(String userId, String teamId) {
         untrackTeam(userId, teamId, null);
     }
 
     @Transactional
+    @CacheEvict(value = "sports_radar", allEntries = true)
     public UserTrackedSportsLeague trackLeague(String userId, TrackLeagueRequest request) {
         String normalizedLeague = espnSportsClient.normalizeLeague(request.getLeague());
 
@@ -577,6 +601,7 @@ public class SportsService {
     }
 
     @Transactional
+    @CacheEvict(value = "sports_radar", allEntries = true)
     public void untrackLeague(String userId, String league) {
         String normalizedLeague = espnSportsClient.normalizeLeague(league);
         trackedLeagueRepository.deleteByUserIdAndLeague(userId, normalizedLeague);

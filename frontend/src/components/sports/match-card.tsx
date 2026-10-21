@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, memo } from "react";
 import { SportMatch } from "@/lib/types";
 import { MapPin, Tv, Star, ChevronRight } from "lucide-react";
 import {
@@ -16,7 +16,7 @@ interface MatchCardProps {
   onClick?: (match: SportMatch) => void;
 }
 
-export function MatchCard({ match, isFavorite, onClick }: MatchCardProps) {
+export const MatchCard = memo(function MatchCard({ match, isFavorite, onClick }: MatchCardProps) {
   const [homeLogoError, setHomeLogoError] = useState(false);
   const [awayLogoError, setAwayLogoError] = useState(false);
 
@@ -232,4 +232,4 @@ export function MatchCard({ match, isFavorite, onClick }: MatchCardProps) {
       </div>
     </div>
   );
-}
+});

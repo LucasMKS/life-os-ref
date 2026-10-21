@@ -49,7 +49,7 @@ export function SportsRadar({ onOpenFavorites, onSelectMatch }: SportsRadarProps
   };
 
   return (
-    <div className="bg-[#121214]/80 backdrop-blur-xl border border-white/5 border-t-emerald-500/50 rounded-3xl p-5 md:p-6 shadow-2xl relative overflow-hidden flex flex-col w-full mb-8">
+    <div className="bg-[#121214]/85 backdrop-blur-md border border-white/5 border-t-emerald-500/50 rounded-3xl p-5 md:p-6 shadow-2xl relative overflow-hidden flex flex-col w-full mb-8">
       {/* Background radial glow */}
       <div className="absolute top-0 right-0 w-80 h-80 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-emerald-500/10 via-emerald-500/5 to-transparent pointer-events-none opacity-60" />
 

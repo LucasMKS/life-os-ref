@@ -8,8 +8,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 0,
+            staleTime: 1000 * 60, // 1 minuto de cache padrão para navegação fluida sem refetches contínuos
+            gcTime: 1000 * 60 * 10, // 10 minutos de retenção em memória
             refetchOnWindowFocus: false,
+            retry: 1,
           },
         },
       })

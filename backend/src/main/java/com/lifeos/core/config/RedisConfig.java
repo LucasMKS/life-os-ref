@@ -84,6 +84,7 @@ public class RedisConfig {
 
         // Sports
         specificConfigs.put("sports_scoreboard", defaultConfig.entryTtl(Duration.ofMinutes(2)));
+        specificConfigs.put("sports_radar", defaultConfig.entryTtl(Duration.ofMinutes(10)));
         specificConfigs.put("sports_teams", defaultConfig.entryTtl(Duration.ofHours(12)));
         specificConfigs.put("sports_leagues", defaultConfig.entryTtl(Duration.ofDays(1)));
         specificConfigs.put("sports_summary", defaultConfig.entryTtl(Duration.ofMinutes(2)));
