@@ -1,748 +1,628 @@
-"use client";
-
-import { useState, useMemo } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Trophy,
-  Calendar as CalendarIcon,
-  ChevronLeft,
-  ChevronRight,
-  Star,
-  RefreshCw,
+  CalendarDays,
+  ChevronDown,
   History,
-  Layers,
-  ArrowRight,
-  Shield,
+  RefreshCw,
+  Settings2,
+  Star,
+  Trophy,
 } from "lucide-react";
 import { sportsApi } from "@/lib/api";
-import {
-  SportLeague,
-  SportMatch,
-  SportsUserPreferences,
-} from "@/lib/types";
+import { SportMatch, SportsUserPreferences } from "@/lib/types";
 import { translateLeagueName } from "@/lib/sports-translations";
-import { getLocalDateString, parseMatchDate } from "@/lib/date-utils";
-import { MatchCard } from "./match-card";
+import { getLocalDateString } from "@/lib/date-utils";
+import { MatchRow, TeamLogo } from "./match-row";
 import { SportsRadar } from "./sports-radar";
-import { MatchDetailModal } from "./match-detail-modal";
+import { PanelEmpty, RowSkeleton, SportsPanel } from "./sports-panel";
+import {
+  FavoriteLookup,
+  SUPPORTED_LEAGUES,
+  findLeague,
+  isFavoriteMatch,
+  isFinishedStatus,
+  isLiveStatus,
+  matchTimestamp,
+  normalizeLeagueSlug,
+} from "./sports-utils";
 
-const SUPPORTED_LEAGUES: SportLeague[] = [
-  {
-    id: "bra.1",
-    slug: "bra.1",
-    name: "Brasileirão Série A",
-    displayName: "Brasileirão Série A",
-    abbreviation: "Série A",
-    sport: "soccer",
-    logoUrl: "https://a.espncdn.com/i/leaguelogos/soccer/500/85.png",
-  },
-  {
-    id: "fifa.friendly",
-    slug: "fifa.friendly",
-    name: "Amistosos & Seleção Brasileira",
-    displayName: "Amistosos Internacionais",
-    abbreviation: "Amistosos",
-    sport: "soccer",
-    logoUrl: "https://a.espncdn.com/i/teamlogos/countries/500/bra.png",
-  },
-  {
-    id: "bra.copa_do_brazil",
-    slug: "bra.copa_do_brazil",
-    name: "Copa do Brasil",
-    displayName: "Copa do Brasil",
-    abbreviation: "Copa BR",
-    sport: "soccer",
-    logoUrl: "https://a.espncdn.com/i/leaguelogos/soccer/500/528.png",
-  },
-  {
-    id: "conmebol.libertadores",
-    slug: "conmebol.libertadores",
-    name: "Copa Libertadores",
-    displayName: "Copa Libertadores da América",
-    abbreviation: "Libertadores",
-    sport: "soccer",
-    logoUrl: "https://a.espncdn.com/i/leaguelogos/soccer/500/58.png",
-  },
-  {
-    id: "uefa.champions",
-    slug: "uefa.champions",
-    name: "UEFA Champions League",
-    displayName: "UEFA Champions League",
-    abbreviation: "UCL",
-    sport: "soccer",
-    logoUrl: "https://a.espncdn.com/i/leaguelogos/soccer/500/2.png",
-  },
-  {
-    id: "fifa.wwc",
-    slug: "fifa.wwc",
-    name: "Copa do Mundo Feminina",
-    displayName: "Copa do Mundo Feminina",
-    abbreviation: "WWC",
-    sport: "soccer",
-    logoUrl: "https://a.espncdn.com/i/leaguelogos/soccer/500/60.png",
-  },
-  {
-    id: "nba",
-    slug: "nba",
-    name: "NBA",
-    displayName: "National Basketball Association",
-    abbreviation: "NBA",
-    sport: "basketball",
-    logoUrl: "https://a.espncdn.com/i/teamlogos/leagues/500/nba.png",
-  },
-  {
-    id: "nfl",
-    slug: "nfl",
-    name: "NFL",
-    displayName: "National Football League",
-    abbreviation: "NFL",
-    sport: "football",
-    logoUrl: "https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png",
-  },
-];
+// O modal só é baixado quando o usuário abre uma partida.
+const MatchDetailModal = lazy(() =>
+  import("./match-detail-modal").then((m) => ({ default: m.MatchDetailModal }))
+);
 
+type ViewFilter = "all" | "live" | "favorites";
+
+const DAY_RANGE_BEFORE = 3;
+const DAY_RANGE_AFTER = 6;
+
+function shiftDate(base: string, days: number): string {
+  const [y, m, d] = base.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  return getLocalDateString(dt);
+}
+
+function dateParts(iso: string) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return {
+    weekday: dt.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", ""),
+    day: dt.getDate(),
+    month: dt.toLocaleDateString("pt-BR", { month: "short" }).replace(".", ""),
+    long: dt.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Seletor de dias                                                     */
+/* ------------------------------------------------------------------ */
+function DayStrip({
+  today,
+  selected,
+  onSelect,
+}: {
+  today: string;
+  selected: string;
+  onSelect: (d: string) => void;
+}) {
+  const days = useMemo(
+    () =>
+      Array.from({ length: DAY_RANGE_BEFORE + DAY_RANGE_AFTER + 1 }, (_, i) =>
+        shiftDate(today, i - DAY_RANGE_BEFORE)
+      ),
+    [today]
+  );
+  const outOfRange = !days.includes(selected);
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 flex gap-1 overflow-x-auto scrollbar-none -mx-1 px-1">
+        {days.map((d) => {
+          const p = dateParts(d);
+          const active = d === selected;
+          const isToday = d === today;
+          return (
+            <button
+              key={d}
+              type="button"
+              onClick={() => onSelect(d)}
+              aria-pressed={active}
+              className={`shrink-0 w-[52px] py-2 rounded-xl flex flex-col items-center transition-colors ${
+                active
+                  ? "bg-zinc-100 text-zinc-900"
+                  : "text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-100"
+              }`}
+            >
+              <span className={`text-[10px] uppercase tracking-wide ${active ? "text-zinc-600" : "text-zinc-500"}`}>
+                {isToday ? "Hoje" : p.weekday}
+              </span>
+              <span className="text-sm font-semibold tabular-nums">{p.day}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Data personalizada */}
+      <label
+        className={`relative shrink-0 h-[52px] px-3 rounded-xl flex items-center gap-2 text-xs cursor-pointer transition-colors border ${
+          outOfRange
+            ? "bg-zinc-100 text-zinc-900 border-transparent"
+            : "border-white/[0.06] text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.05]"
+        }`}
+        title="Escolher data"
+      >
+        <CalendarDays className="w-4 h-4" />
+        {outOfRange && (
+          <span className="font-medium tabular-nums">
+            {dateParts(selected).day} {dateParts(selected).month}
+          </span>
+        )}
+        <input
+          type="date"
+          value={selected}
+          onChange={(e) => e.target.value && onSelect(e.target.value)}
+          className="absolute inset-0 opacity-0 cursor-pointer"
+          aria-label="Escolher data"
+        />
+      </label>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Chip de filtro                                                      */
+/* ------------------------------------------------------------------ */
+function FilterChip({
+  active,
+  onClick,
+  children,
+  count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  count?: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium transition-colors ${
+        active
+          ? "bg-white/[0.1] text-white"
+          : "text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.04]"
+      }`}
+    >
+      {children}
+      {count !== undefined && (
+        <span className={`tabular-nums ${active ? "text-zinc-300" : "text-zinc-600"}`}>{count}</span>
+      )}
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Grupo de partidas por campeonato                                    */
+/* ------------------------------------------------------------------ */
+interface LeagueGroup {
+  key: string;
+  name: string;
+  logo?: string;
+  matches: SportMatch[];
+  liveCount: number;
+}
+
+function LeagueSection({
+  group,
+  fav,
+  onSelect,
+}: {
+  group: LeagueGroup;
+  fav: FavoriteLookup;
+  onSelect: (m: SportMatch) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  return (
+    <SportsPanel
+      className="[content-visibility:auto] [contain-intrinsic-size:auto_320px]"
+    >
+      <button
+        type="button"
+        onClick={() => setCollapsed((v) => !v)}
+        aria-expanded={!collapsed}
+        className="w-full flex items-center gap-2.5 px-4 py-3 border-b border-white/[0.05] hover:bg-white/[0.02] transition-colors text-left"
+      >
+        {group.logo ? (
+          <TeamLogo src={group.logo} name={group.name} size={18} />
+        ) : (
+          <Trophy className="w-4 h-4 text-zinc-500" />
+        )}
+        <span className="flex-1 text-[13px] font-semibold text-zinc-100 truncate">{group.name}</span>
+        {group.liveCount > 0 && (
+          <span className="flex items-center gap-1.5 text-[11px] text-emerald-300/90">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            {group.liveCount} ao vivo
+          </span>
+        )}
+        <span className="text-[11px] text-zinc-500 tabular-nums">{group.matches.length}</span>
+        <ChevronDown
+          className={`w-4 h-4 text-zinc-500 transition-transform ${collapsed ? "-rotate-90" : ""}`}
+        />
+      </button>
+      {!collapsed && (
+        <div className="divide-y divide-white/[0.04]">
+          {group.matches.map((m) => (
+            <MatchRow key={m.id} match={m} isFavorite={isFavoriteMatch(m, fav)} onSelect={onSelect} />
+          ))}
+        </div>
+      )}
+    </SportsPanel>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Dashboard                                                           */
+/* ------------------------------------------------------------------ */
 export function SportsDashboard() {
-  const [selectedLeagueFilter, setSelectedLeagueFilter] = useState<string>("ALL");
-  const [selectedMatchForModal, setSelectedMatchForModal] = useState<SportMatch | null>(null);
+  const today = useMemo(() => getLocalDateString(), []);
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [view, setView] = useState<ViewFilter>("all");
+  const [leagueFilter, setLeagueFilter] = useState<string>("ALL");
+  const [selectedMatch, setSelectedMatch] = useState<SportMatch | null>(null);
+  const [showAllHistory, setShowAllHistory] = useState(false);
 
-  // Date management: default to today in local timezone (formatted as YYYY-MM-DD)
-  const [selectedDate, setSelectedDate] = useState<string>(() => getLocalDateString());
+  const isToday = selectedDate === today;
+  const handleSelect = useCallback((m: SportMatch) => setSelectedMatch(m), []);
+  const closeModal = useCallback(() => setSelectedMatch(null), []);
 
-  const todayStr = useMemo(() => getLocalDateString(), []);
-
-  // Fetch preferences (tracked teams & leagues)
+  /* Preferências */
   const { data: preferences, refetch: refetchPrefs } = useQuery<SportsUserPreferences>({
     queryKey: ["sports-preferences"],
     queryFn: sportsApi.getPreferences,
     staleTime: 1000 * 60 * 5,
   });
 
-  const trackedSportTeamKeys = useMemo(() => {
-    return new Set(
-      preferences?.trackedTeams?.map(
-        (t) => `${(t.sport || "").toLowerCase()}::${t.teamId}`
-      ) || []
-    );
-  }, [preferences?.trackedTeams]);
-
-  const trackedLeagueSlugs = useMemo(() => {
-    return new Set(preferences?.trackedLeagues?.map((l) => l.league) || []);
-  }, [preferences?.trackedLeagues]);
-
-  const totalFavoritesCount =
+  const fav = useMemo<FavoriteLookup>(
+    () => ({
+      teamKeys: new Set(
+        preferences?.trackedTeams?.map((t) => `${(t.sport || "").toLowerCase()}::${t.teamId}`) || []
+      ),
+      leagueSlugs: new Set(
+        preferences?.trackedLeagues?.map((l) => normalizeLeagueSlug(l.league)) || []
+      ),
+    }),
+    [preferences]
+  );
+  const favoritesCount =
     (preferences?.trackedTeams?.length || 0) + (preferences?.trackedLeagues?.length || 0);
 
-  // Query: Aggregated day matches across leagues
+  /* Jogos do dia — sempre todas as ligas; o filtro por liga é feito no cliente (troca instantânea). */
   const {
     data: dayMatches = [],
     isLoading: isLoadingDay,
     isFetching: isFetchingDay,
     refetch: refetchDay,
   } = useQuery<SportMatch[]>({
-    queryKey: ["sports-day-matches", selectedDate, selectedLeagueFilter],
-    queryFn: () => sportsApi.getDayMatches(selectedDate, selectedLeagueFilter),
-    staleTime: 1000 * 30, // 30s de dados frescos
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      const hasLiveMatch = data?.some(
-        (m) =>
-          m.status?.toUpperCase().includes("IN_PROGRESS") ||
-          m.status?.toUpperCase().includes("FIRST_HALF") ||
-          m.status?.toUpperCase().includes("HALFTIME")
-      );
-      return hasLiveMatch ? 30000 : 120000;
-    },
-  });
-
-  // Query: Dedicated Live matches query for today (apenas quando não estiver na aba "Hoje" + "Todas as Ligas")
-  const isViewingTodayAll = selectedDate === todayStr && selectedLeagueFilter === "ALL";
-  const {
-    data: todayAllMatches = [],
-    refetch: refetchToday,
-  } = useQuery<SportMatch[]>({
-    queryKey: ["sports-day-matches-today-live", todayStr],
-    queryFn: () => sportsApi.getDayMatches(todayStr, "ALL"),
-    enabled: !isViewingTodayAll, // DEDUP: Não duplica requisição pesada quando dayMatches já possui todos os dados de hoje
+    queryKey: ["sports-day-matches", selectedDate, "ALL"],
+    queryFn: () => sportsApi.getDayMatches(selectedDate, "ALL"),
     staleTime: 1000 * 30,
-    refetchInterval: 30000,
+    placeholderData: (prev) => prev,
+    refetchInterval: (q) => (q.state.data?.some((m) => isLiveStatus(m.status)) ? 30_000 : 120_000),
   });
 
-  // Live matches across all leagues
-  const liveMatches = useMemo(() => {
-    const list = isViewingTodayAll ? dayMatches : todayAllMatches.length > 0 ? todayAllMatches : dayMatches;
-    return list.filter((m) => {
-      const s = (m.status || "").toUpperCase();
-      return (
-        s.includes("IN_PROGRESS") ||
-        s.includes("FIRST_HALF") ||
-        s.includes("SECOND_HALF") ||
-        s.includes("HALFTIME") ||
-        s.includes("LIVE")
-      );
-    });
-  }, [isViewingTodayAll, dayMatches, todayAllMatches]);
+  /* Ao vivo hoje — só busca separado quando o usuário está olhando outro dia. */
+  const { data: todayMatches = [] } = useQuery<SportMatch[]>({
+    queryKey: ["sports-day-matches", today, "ALL"],
+    queryFn: () => sportsApi.getDayMatches(today, "ALL"),
+    enabled: !isToday,
+    staleTime: 1000 * 30,
+    refetchInterval: 30_000,
+  });
 
-  const liveMatchesCount = liveMatches.length;
+  const liveToday = useMemo(
+    () => (isToday ? dayMatches : todayMatches).filter((m) => isLiveStatus(m.status)),
+    [isToday, dayMatches, todayMatches]
+  );
 
-  // Query: Recent finished matches for tracked teams (Histórico dos Favoritos)
+  /* Resultados recentes dos times favoritos */
+  const trackedTeamsKey = preferences?.trackedTeams?.map((t) => t.teamId).join(",") || "";
   const {
-    data: historyMatches = [],
+    data: history = [],
     isLoading: isLoadingHistory,
     refetch: refetchHistory,
   } = useQuery<SportMatch[]>({
-    queryKey: ["sports-history-matches", preferences?.trackedTeams?.map((t) => t.teamId).join(",")],
+    queryKey: ["sports-history-matches", trackedTeamsKey],
     queryFn: async () => {
-      if (!preferences?.trackedTeams || preferences.trackedTeams.length === 0) {
-        return [];
-      }
-      const teamsToFetch = preferences.trackedTeams.slice(0, 5);
-      const promises = teamsToFetch.map((t) =>
-        sportsApi.getTeamSchedule(t.sport, t.league, t.teamId).catch(() => [])
+      const teams = (preferences?.trackedTeams || []).slice(0, 6);
+      const results = await Promise.all(
+        teams.map((t) => sportsApi.getTeamSchedule(t.sport, t.league, t.teamId).catch(() => []))
       );
-      const results = await Promise.all(promises);
-
-      const finishedMap = new Map<string, SportMatch>();
-      for (const schedule of results) {
-        if (!Array.isArray(schedule)) continue;
-        for (const match of schedule) {
-          const s = (match.status || "").toUpperCase();
-          const isFinished =
-            s.includes("FINISHED") ||
-            s.includes("FINAL") ||
-            s.includes("FT") ||
-            s.includes("POST") ||
-            s.includes("COMPLETED");
-          if (isFinished) {
-            finishedMap.set(match.id, match);
-          }
-        }
+      const map = new Map<string, SportMatch>();
+      for (const list of results) {
+        if (!Array.isArray(list)) continue;
+        for (const m of list) if (isFinishedStatus(m.status)) map.set(m.id, m);
       }
-
-      const sorted = Array.from(finishedMap.values()).sort((a, b) => {
-        const da = parseMatchDate(a.matchDate || a.date)?.getTime() || 0;
-        const db = parseMatchDate(b.matchDate || b.date)?.getTime() || 0;
-        return db - da; // newest first
-      });
-
-      return sorted.slice(0, 20);
+      return Array.from(map.values())
+        .sort((a, b) => matchTimestamp(b) - matchTimestamp(a))
+        .slice(0, 15);
     },
-    enabled: Boolean(preferences?.trackedTeams && preferences.trackedTeams.length > 0),
+    enabled: trackedTeamsKey.length > 0,
     staleTime: 1000 * 60 * 15,
   });
 
-  // Group day matches by translated league when "ALL" is selected
-  const groupedByLeague = useMemo(() => {
-    if (selectedLeagueFilter !== "ALL") return null;
+  /* Contagem de jogos por liga no dia */
+  const leagueCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const m of dayMatches) {
+      const k = normalizeLeagueSlug(m.league);
+      map.set(k, (map.get(k) || 0) + 1);
+    }
+    return map;
+  }, [dayMatches]);
 
-    const map = new Map<
-      string,
-      { leagueName: string; leagueLogo?: string; matches: SportMatch[] }
-    >();
+  const dayLiveCount = useMemo(() => dayMatches.filter((m) => isLiveStatus(m.status)).length, [dayMatches]);
+  const dayFavCount = useMemo(() => dayMatches.filter((m) => isFavoriteMatch(m, fav)).length, [dayMatches, fav]);
 
-    for (const match of dayMatches) {
-      const translatedLeague = translateLeagueName(match.leagueName, match.league);
-      const key = translatedLeague || match.league || "outros";
+  /* Lista filtrada e agrupada */
+  const groups = useMemo<LeagueGroup[]>(() => {
+    let list = dayMatches;
+    if (leagueFilter !== "ALL") list = list.filter((m) => normalizeLeagueSlug(m.league) === leagueFilter);
+    if (view === "live") list = list.filter((m) => isLiveStatus(m.status));
+    if (view === "favorites") list = list.filter((m) => isFavoriteMatch(m, fav));
 
-      const leagueDef = SUPPORTED_LEAGUES.find(
-        (l) =>
-          l.slug === match.league ||
-          l.id === match.league ||
-          translateLeagueName(l.name) === translatedLeague ||
-          translateLeagueName(l.displayName) === translatedLeague
-      );
-      const leagueLogo = leagueDef?.logoUrl;
-
+    const map = new Map<string, LeagueGroup>();
+    for (const m of list) {
+      const key = normalizeLeagueSlug(m.league) || "outros";
       if (!map.has(key)) {
-        map.set(key, { leagueName: translatedLeague, leagueLogo, matches: [] });
+        const def = findLeague(key);
+        map.set(key, {
+          key,
+          name: translateLeagueName(m.leagueName, m.league) || def?.name || "Outros",
+          logo: def?.logoUrl,
+          matches: [],
+          liveCount: 0,
+        });
       }
-      map.get(key)!.matches.push(match);
+      const g = map.get(key)!;
+      g.matches.push(m);
+      if (isLiveStatus(m.status)) g.liveCount++;
     }
 
-    return Array.from(map.values());
-  }, [selectedLeagueFilter, dayMatches]);
+    const order = (k: string) => {
+      const i = SUPPORTED_LEAGUES.findIndex((l) => l.slug === k);
+      return i === -1 ? 999 : i;
+    };
+    const rank = (m: SportMatch) => (isLiveStatus(m.status) ? 0 : isFinishedStatus(m.status) ? 2 : 1);
+
+    return Array.from(map.values())
+      .map((g) => ({
+        ...g,
+        matches: [...g.matches].sort(
+          (a, b) => rank(a) - rank(b) || matchTimestamp(a) - matchTimestamp(b)
+        ),
+      }))
+      // Ligas com jogos ao vivo e favoritas primeiro, depois a ordem padrão
+      .sort(
+        (a, b) =>
+          Number(b.liveCount > 0) - Number(a.liveCount > 0) ||
+          Number(fav.leagueSlugs.has(b.key)) - Number(fav.leagueSlugs.has(a.key)) ||
+          order(a.key) - order(b.key)
+      );
+  }, [dayMatches, leagueFilter, view, fav]);
+
+  const visibleCount = groups.reduce((acc, g) => acc + g.matches.length, 0);
+  const leaguesWithGames = SUPPORTED_LEAGUES.filter(
+    (l) => (leagueCounts.get(l.slug) || 0) > 0 || l.slug === leagueFilter
+  );
 
   const handleRefresh = () => {
     refetchDay();
-    refetchToday();
     refetchPrefs();
     refetchHistory();
   };
 
-  const handleShiftDate = (days: number) => {
-    const [year, month, day] = selectedDate.split("-").map(Number);
-    const current = new Date(year, month - 1, day);
-    current.setDate(current.getDate() + days);
-    setSelectedDate(getLocalDateString(current));
+  const changeDate = (d: string) => {
+    setSelectedDate(d);
+    if (view === "live" && d !== today) setView("all");
   };
 
-  const handleSelectQuickDate = (type: "yesterday" | "today" | "tomorrow") => {
-    const d = new Date();
-    if (type === "yesterday") d.setDate(d.getDate() - 1);
-    if (type === "tomorrow") d.setDate(d.getDate() + 1);
-    setSelectedDate(getLocalDateString(d));
-  };
-
-  const formattedDateTitle = useMemo(() => {
-    try {
-      const [year, month, day] = selectedDate.split("-").map(Number);
-      const d = new Date(year, month - 1, day);
-      return d.toLocaleDateString("pt-BR", {
-        weekday: "short",
-        day: "2-digit",
-        month: "short",
-      });
-    } catch {
-      return selectedDate;
-    }
-  }, [selectedDate]);
+  const historyVisible = showAllHistory ? history : history.slice(0, 5);
+  const dateInfo = dateParts(selectedDate);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      {/* 1. TOP HEADER: TÍTULO + AÇÕES RÁPIDAS */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 md:p-5 bg-[#121214]/70 backdrop-blur-md border border-white/5 rounded-2xl shadow-lg">
+    <div className="space-y-6">
+      {/* ============ CABEÇALHO ============ */}
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10px] md:text-xs font-bold tracking-widest uppercase bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mb-1.5">
-            <Trophy className="w-3 h-3 text-emerald-400" />
-            Central de Esportes
-          </span>
-          <h1 className="text-xl md:text-3xl font-black tracking-tight text-white flex items-center gap-2">
-            Placares &{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400">
-              Partidas
-            </span>
-          </h1>
+          <p className="text-xs font-medium text-zinc-500 mb-1 capitalize">
+            {isToday ? "Hoje · " : ""}
+            {dateInfo.long}
+          </p>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white">Esportes</h1>
+          <p className="text-sm text-zinc-500 mt-1">
+            {isLoadingDay ? (
+              "Carregando partidas…"
+            ) : (
+              <>
+                {dayMatches.length} {dayMatches.length === 1 ? "jogo" : "jogos"}
+                {dayLiveCount > 0 && (
+                  <span className="text-emerald-300/90"> · {dayLiveCount} ao vivo</span>
+                )}
+                {dayFavCount > 0 && <span> · {dayFavCount} dos seus favoritos</span>}
+              </>
+            )}
+          </p>
         </div>
 
-        {/* Action Bar */}
-        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+        <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={handleRefresh}
             disabled={isFetchingDay}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border border-white/5 transition-all disabled:opacity-50"
-            title="Atualizar placares"
-            aria-label="Atualizar placares"
+            className="h-9 w-9 flex items-center justify-center rounded-xl border border-white/[0.06] text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-colors disabled:opacity-60"
+            title="Atualizar"
+            aria-label="Atualizar"
           >
-            <RefreshCw
-              className={`w-4 h-4 ${isFetchingDay ? "animate-spin text-emerald-400" : ""}`}
-            />
+            <RefreshCw className={`w-4 h-4 ${isFetchingDay ? "animate-spin" : ""}`} />
           </button>
-
           <Link
             href="/sports/favoritos"
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition-all shadow-sm"
+            className="h-9 px-3.5 inline-flex items-center gap-2 rounded-xl border border-white/[0.06] text-sm text-zinc-300 hover:text-white hover:bg-white/[0.05] transition-colors"
           >
-            <Star className="w-3.5 h-3.5 fill-emerald-400 text-emerald-400" />
-            <span>Gerenciar Favoritos</span>
-            {totalFavoritesCount > 0 && (
-              <span className="ml-1 px-1.5 py-0.2 rounded-full bg-emerald-500/25 text-emerald-200 text-[10px] font-black">
-                {totalFavoritesCount}
-              </span>
+            <Settings2 className="w-4 h-4" />
+            <span>Favoritos</span>
+            {favoritesCount > 0 && (
+              <span className="text-xs text-zinc-500 tabular-nums">{favoritesCount}</span>
             )}
           </Link>
         </div>
-      </div>
+      </header>
 
-      {/* 2. TOP HERO: RADAR DE PRÓXIMOS JOGOS (TIMELINE DOS PRÓXIMOS 14 DIAS) */}
-      <SportsRadar
-        onOpenFavorites={() => {}}
-        onSelectMatch={setSelectedMatchForModal}
-      />
+      {/* ============ DIAS ============ */}
+      <DayStrip today={today} selected={selectedDate} onSelect={changeDate} />
 
-      {/* 3. AO VIVO: TEMA VERDE/EMERALD HARMONIOSO E ALTURA DINÂMICA COMPACTA */}
-      {liveMatchesCount > 0 && (
-        <div className="p-4 md:p-5 bg-[#121214]/90 backdrop-blur-md border border-emerald-500/30 rounded-3xl shadow-[0_0_30px_rgba(16,185,129,0.08)] space-y-3 animate-in fade-in duration-300">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                Ao Vivo Agora ({liveMatchesCount})
-              </span>
-              <span className="text-xs text-zinc-400 hidden sm:inline">
-                Acompanhamento em tempo real sincronizado com a ESPN
-              </span>
-            </div>
-
-            <button
-              onClick={handleRefresh}
-              className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20"
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* ============ COLUNA PRINCIPAL ============ */}
+        <div className="lg:col-span-8 space-y-4 min-w-0">
+          {/* Filtros */}
+          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none border-b border-white/[0.06] pb-3">
+            <FilterChip active={view === "all"} onClick={() => setView("all")}>
+              Todos
+            </FilterChip>
+            {isToday && dayLiveCount > 0 && (
+              <FilterChip active={view === "live"} onClick={() => setView("live")} count={dayLiveCount}>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                Ao vivo
+              </FilterChip>
+            )}
+            <FilterChip
+              active={view === "favorites"}
+              onClick={() => setView("favorites")}
+              count={dayFavCount}
             >
-              <RefreshCw className="w-3 h-3" />
-              <span>Sincronizar</span>
-            </button>
-          </div>
+              <Star className="w-3.5 h-3.5" />
+              Favoritos
+            </FilterChip>
 
-          {/* DYNAMIC HEIGHT CONTAINER:
-              - 1 game: 1 compact column
-              - 2 games: 2-column grid
-              - > 2 games: max-height with smooth scrollbar, never dominating the full vertical page */}
-          <div
-            className={`grid gap-3.5 ${
-              liveMatchesCount === 1
-                ? "grid-cols-1 max-w-xl"
-                : "grid-cols-1 md:grid-cols-2"
-            } ${
-              liveMatchesCount > 2
-                ? "max-h-[320px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700/60 scrollbar-track-transparent pr-1.5"
-                : ""
-            }`}
-          >
-            {liveMatches.map((match) => (
-              <MatchCard
-                key={`live-${match.id}`}
-                match={match}
-                onClick={setSelectedMatchForModal}
-                isFavorite={Boolean(
-                  (match.homeTeam?.id &&
-                    trackedSportTeamKeys.has(
-                      `${(match.sport || "").toLowerCase()}::${match.homeTeam.id}`
-                    )) ||
-                    (match.awayTeam?.id &&
-                      trackedSportTeamKeys.has(
-                        `${(match.sport || "").toLowerCase()}::${match.awayTeam.id}`
-                      )) ||
-                    trackedLeagueSlugs.has(match.league || "")
-                )}
-              />
+            {leaguesWithGames.length > 0 && <span className="w-px h-5 bg-white/[0.08] mx-2 shrink-0" />}
+
+            {leaguesWithGames.length > 1 && (
+              <FilterChip active={leagueFilter === "ALL"} onClick={() => setLeagueFilter("ALL")}>
+                Todas as ligas
+              </FilterChip>
+            )}
+            {leaguesWithGames.map((l) => (
+              <FilterChip
+                key={l.slug}
+                active={leagueFilter === l.slug}
+                onClick={() => setLeagueFilter(leagueFilter === l.slug ? "ALL" : l.slug)}
+                count={leagueCounts.get(l.slug) || 0}
+              >
+                {l.logoUrl && <TeamLogo src={l.logoUrl} name={l.abbreviation || l.name} size={14} />}
+                {l.abbreviation || l.name}
+              </FilterChip>
             ))}
           </div>
-        </div>
-      )}
 
-      {/* 4. BLOCO UNIFICADO: CENTRAL DE JOGOS & RESULTADOS */}
-      <div className="bg-[#121214]/85 backdrop-blur-md border border-white/5 border-t-emerald-500/40 rounded-3xl p-5 md:p-6 lg:p-7 shadow-2xl relative overflow-hidden">
-        {/* Ambient radial glow */}
-        <div className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-emerald-500/5 via-teal-500/5 to-transparent pointer-events-none opacity-60" />
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start relative z-10">
-          {/* ============================================================== */}
-          {/* COLUNA ESQUERDA: JOGOS DO DIA (col-span-12 lg:col-span-7)      */}
-          {/* ============================================================== */}
-          <div className="lg:col-span-7 space-y-4">
-            {/* Top Bar da Esquerda: Título + Seletor de Data */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/[0.08]">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shrink-0">
-                  <CalendarIcon className="w-4 h-4" />
-                </div>
-                <div>
-                  <h2 className="text-base md:text-lg font-black text-white tracking-tight">
-                    Jogos do Dia
-                  </h2>
-                  <span className="text-[11px] text-zinc-400">
-                    Partidas organizadas por data e campeonato
-                  </span>
-                </div>
-              </div>
-
-              {/* Quick Date Selector + Arrows */}
-              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-between sm:justify-end">
-                <div className="flex items-center gap-1 bg-black/40 p-0.5 rounded-xl border border-white/5">
-                  <button
-                    onClick={() => handleSelectQuickDate("yesterday")}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
-                  >
-                    Ontem
-                  </button>
-                  <button
-                    onClick={() => handleSelectQuickDate("today")}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                      selectedDate === todayStr
-                        ? "bg-emerald-500 text-black shadow-sm font-black"
-                        : "text-zinc-400 hover:text-white hover:bg-white/5"
-                    }`}
-                  >
-                    Hoje
-                  </button>
-                  <button
-                    onClick={() => handleSelectQuickDate("tomorrow")}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
-                  >
-                    Amanhã
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => handleShiftDate(-1)}
-                    className="p-1.5 rounded-lg bg-zinc-900 border border-white/5 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
-                    title="Dia anterior"
-                    aria-label="Dia anterior"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-
-                  <div className="relative flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900 border border-white/10 text-xs font-semibold text-zinc-300">
-                    <CalendarIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span className="capitalize text-[11px] md:text-xs">{formattedDateTitle}</span>
-                    <input
-                      type="date"
-                      value={selectedDate}
-                      onChange={(e) => {
-                        if (e.target.value) setSelectedDate(e.target.value);
+          {/* Lista */}
+          {isLoadingDay ? (
+            <SportsPanel>
+              <RowSkeleton rows={6} />
+            </SportsPanel>
+          ) : visibleCount === 0 ? (
+            <SportsPanel>
+              <PanelEmpty
+                icon={<Trophy className="w-8 h-8" />}
+                title={
+                  view === "favorites"
+                    ? "Nenhum jogo dos seus favoritos nesta data"
+                    : view === "live"
+                    ? "Nenhum jogo ao vivo agora"
+                    : "Nenhum jogo nesta data"
+                }
+                description={
+                  view !== "all" || leagueFilter !== "ALL"
+                    ? "Tente remover os filtros ou escolher outro dia."
+                    : "Escolha outro dia no calendário acima."
+                }
+                action={
+                  view !== "all" || leagueFilter !== "ALL" ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setView("all");
+                        setLeagueFilter("ALL");
                       }}
-                      className="absolute inset-0 opacity-0 cursor-pointer w-full"
-                      aria-label="Selecionar data"
-                    />
-                  </div>
-
-                  <button
-                    onClick={() => handleShiftDate(1)}
-                    className="p-1.5 rounded-lg bg-zinc-900 border border-white/5 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
-                    title="Próximo dia"
-                    aria-label="Próximo dia"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-zinc-200 transition-colors"
+                    >
+                      Limpar filtros
+                    </button>
+                  ) : undefined
+                }
+              />
+            </SportsPanel>
+          ) : (
+            <div className={`space-y-4 transition-opacity ${isFetchingDay && !isLoadingDay ? "opacity-70" : ""}`}>
+              {groups.map((g) => (
+                <LeagueSection key={g.key} group={g} fav={fav} onSelect={handleSelect} />
+              ))}
             </div>
+          )}
+        </div>
 
-            {/* League Filter Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1">
-              <button
-                onClick={() => setSelectedLeagueFilter("ALL")}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                  selectedLeagueFilter === "ALL"
-                    ? "bg-emerald-500 text-black shadow-sm font-black"
-                    : "bg-zinc-900 text-zinc-400 hover:text-zinc-200 border border-white/5"
-                }`}
-              >
-                Todas as Ligas
-              </button>
-
-              {SUPPORTED_LEAGUES.map((league) => {
-                const active = selectedLeagueFilter === league.slug;
-                return (
-                  <button
-                    key={league.slug}
-                    onClick={() => setSelectedLeagueFilter(league.slug)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all ${
-                      active
-                        ? "bg-white/15 text-white border border-white/20 font-bold"
-                        : "bg-zinc-900 text-zinc-400 hover:text-zinc-200 border border-white/5"
-                    }`}
-                  >
-                    {league.logoUrl && (
-                      <img
-                        src={league.logoUrl}
-                        alt=""
-                        className="w-3.5 h-3.5 object-contain"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLElement).style.display = "none";
-                        }}
-                      />
-                    )}
-                    <span>{league.abbreviation || league.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Match List for "Jogos do Dia" */}
-            {isLoadingDay ? (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3.5 py-4">
-                {[1, 2, 3, 4].map((i) => (
-                  <div
-                    key={i}
-                    className="h-32 rounded-2xl bg-zinc-900/40 border border-white/5 animate-pulse"
+        {/* ============ COLUNA LATERAL ============ */}
+        <aside className="lg:col-span-4 space-y-4 lg:sticky lg:top-6">
+          {/* Ao vivo hoje (quando navegando em outro dia) */}
+          {!isToday && liveToday.length > 0 && (
+            <SportsPanel
+              title={
+                <span className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Ao vivo agora
+                </span>
+              }
+              action={
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDate(today);
+                    setView("live");
+                  }}
+                  className="text-[11px] text-zinc-400 hover:text-white transition-colors"
+                >
+                  Ver todos
+                </button>
+              }
+            >
+              <div className="divide-y divide-white/[0.04]">
+                {liveToday.slice(0, 4).map((m) => (
+                  <MatchRow
+                    key={m.id}
+                    match={m}
+                    showLeague
+                    isFavorite={isFavoriteMatch(m, fav)}
+                    onSelect={handleSelect}
                   />
                 ))}
               </div>
-            ) : selectedLeagueFilter === "ALL" && groupedByLeague ? (
-              /* GROUPED BY LEAGUE */
-              groupedByLeague.length === 0 ? (
-                <div className="py-12 text-center flex flex-col items-center justify-center gap-2 bg-[#121214]/30 rounded-2xl border border-dashed border-white/10">
-                  <Trophy className="w-8 h-8 text-zinc-600 mb-1" />
-                  <p className="text-zinc-300 text-sm font-semibold">
-                    Nenhum jogo encontrado para esta data nas ligas cadastradas
-                  </p>
-                  <p className="text-zinc-500 text-xs">
-                    Tente selecionar outra data na barra acima.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {groupedByLeague.map((group) => (
-                    <div key={group.leagueName} className="space-y-3">
-                      <div className="flex items-center gap-2 px-1">
-                        {group.leagueLogo && (
-                          <img
-                            src={group.leagueLogo}
-                            alt=""
-                            className="w-4 h-4 object-contain"
-                            onError={(e) => {
-                              (e.currentTarget as HTMLElement).style.display = "none";
-                            }}
-                          />
-                        )}
-                        <h3 className="text-xs md:text-sm font-bold uppercase tracking-wider text-emerald-400">
-                          {group.leagueName}
-                        </h3>
-                        <span className="text-[11px] text-zinc-500 font-medium">
-                          ({group.matches.length})
-                        </span>
-                      </div>
+            </SportsPanel>
+          )}
 
-                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3.5">
-                        {group.matches.map((match) => (
-                          <MatchCard
-                            key={match.id}
-                            match={match}
-                            onClick={setSelectedMatchForModal}
-                            isFavorite={Boolean(
-                              (match.homeTeam?.id &&
-                                trackedSportTeamKeys.has(
-                                  `${(match.sport || "").toLowerCase()}::${match.homeTeam.id}`
-                                )) ||
-                                (match.awayTeam?.id &&
-                                  trackedSportTeamKeys.has(
-                                    `${(match.sport || "").toLowerCase()}::${match.awayTeam.id}`
-                                  )) ||
-                                trackedLeagueSlugs.has(match.league || "")
-                            )}
-                          />
-                        ))}
-                      </div>
-                    </div>
+          <SportsRadar onSelectMatch={handleSelect} />
+
+          <SportsPanel title="Resultados recentes" icon={<History className="w-4 h-4" />}>
+            {!preferences?.trackedTeams?.length ? (
+              <PanelEmpty
+                title="Sem times favoritos"
+                description="Adicione seus clubes para acompanhar os últimos placares aqui."
+                action={
+                  <Link
+                    href="/sports/favoritos"
+                    className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-zinc-200 transition-colors"
+                  >
+                    Escolher times
+                  </Link>
+                }
+              />
+            ) : isLoadingHistory ? (
+              <RowSkeleton rows={3} />
+            ) : history.length === 0 ? (
+              <PanelEmpty title="Nenhum resultado recente" />
+            ) : (
+              <>
+                <div className="divide-y divide-white/[0.04]">
+                  {historyVisible.map((m) => (
+                    <MatchRow key={m.id} match={m} showDate showLeague onSelect={handleSelect} />
                   ))}
                 </div>
-              )
-            ) : dayMatches.length === 0 ? (
-              /* EMPTY STATE FOR SINGLE LEAGUE */
-              <div className="py-14 text-center flex flex-col items-center justify-center gap-3 bg-[#121214]/30 rounded-2xl border border-dashed border-white/10">
-                <Trophy className="w-10 h-10 text-zinc-600 mb-1" />
-                <div>
-                  <p className="text-zinc-200 text-sm font-semibold">
-                    Nenhum jogo agendado para esta competição nesta data
-                  </p>
-                  <p className="text-zinc-500 text-xs mt-1">
-                    Selecione outro dia no seletor acima ou volte para &quot;Todas as Ligas&quot;.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              /* FLAT MATCH LIST FOR SINGLE LEAGUE */
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3.5">
-                {dayMatches.map((match) => (
-                  <MatchCard
-                    key={match.id}
-                    match={match}
-                    onClick={setSelectedMatchForModal}
-                    isFavorite={Boolean(
-                      (match.homeTeam?.id &&
-                        trackedSportTeamKeys.has(
-                          `${(match.sport || "").toLowerCase()}::${match.homeTeam.id}`
-                        )) ||
-                        (match.awayTeam?.id &&
-                          trackedSportTeamKeys.has(
-                            `${(match.sport || "").toLowerCase()}::${match.awayTeam.id}`
-                          )) ||
-                        trackedLeagueSlugs.has(match.league || "")
-                    )}
-                  />
-                ))}
-              </div>
+                {history.length > 5 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllHistory((v) => !v)}
+                    className="w-full px-4 py-2.5 text-xs font-medium text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.03] border-t border-white/[0.05] transition-colors"
+                  >
+                    {showAllHistory ? "Mostrar menos" : `Mostrar mais ${history.length - 5}`}
+                  </button>
+                )}
+              </>
             )}
-          </div>
-
-          {/* ============================================================== */}
-          {/* COLUNA DIREITA: ÚLTIMOS RESULTADOS (col-span-12 lg:col-span-5) */}
-          {/* ============================================================== */}
-          <div className="lg:col-span-5 space-y-4 lg:border-l lg:border-white/[0.08] lg:pl-8">
-            {/* Header da Direita */}
-            <div className="flex items-center justify-between gap-3 pb-4 border-b border-white/[0.08]">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shrink-0">
-                  <History className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base md:text-lg font-black text-white tracking-tight">
-                      Últimos Resultados
-                    </h2>
-                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
-                      Favoritos
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-zinc-400">
-                    Placares recentes dos seus times
-                  </p>
-                </div>
-              </div>
-
-              <Link
-                href="/sports/favoritos"
-                className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1 shrink-0 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20"
-              >
-                <span>Times</span>
-                <ArrowRight className="w-3 h-3" />
-              </Link>
-            </div>
-
-            {/* Finished Matches List */}
-            {isLoadingHistory ? (
-              <div className="space-y-3 py-4">
-                {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="h-32 rounded-2xl bg-zinc-900/40 border border-white/5 animate-pulse"
-                  />
-                ))}
-              </div>
-            ) : !preferences?.trackedTeams || preferences.trackedTeams.length === 0 ? (
-              <div className="py-12 px-4 text-center flex flex-col items-center justify-center gap-3 bg-[#121214]/40 rounded-2xl border border-dashed border-white/10">
-                <Shield className="w-9 h-9 text-emerald-400/50 mb-1" />
-                <div>
-                  <p className="text-zinc-200 text-sm font-semibold">
-                    Nenhum time favorito selecionado
-                  </p>
-                  <p className="text-zinc-500 text-xs mt-1">
-                    Adicione seus clubes na página de favoritos para ver seus placares recentes aqui.
-                  </p>
-                </div>
-                <Link
-                  href="/sports/favoritos"
-                  className="mt-1 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-black hover:bg-emerald-400 transition-all shadow-md"
-                >
-                  Escolher Times Favoritos
-                </Link>
-              </div>
-            ) : historyMatches.length === 0 ? (
-              <div className="py-12 text-center flex flex-col items-center justify-center gap-2 bg-[#121214]/30 rounded-2xl border border-dashed border-white/10">
-                <History className="w-8 h-8 text-zinc-600 mb-1" />
-                <p className="text-zinc-300 text-sm font-semibold">
-                  Nenhum resultado recente encontrado
-                </p>
-                <p className="text-zinc-500 text-xs">
-                  Acompanhe as próximas partidas no Radar no topo da página.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3 max-h-[820px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent pr-1">
-                {historyMatches.map((match) => (
-                  <MatchCard
-                    key={`hist-${match.id}`}
-                    match={match}
-                    onClick={setSelectedMatchForModal}
-                    isFavorite={true}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+          </SportsPanel>
+        </aside>
       </div>
 
-      {/* 5. MODAL DE DETALHES DA PARTIDA (ESTATÍSTICAS, LANCES E INFORMAÇÕES) */}
-      <MatchDetailModal
-        match={selectedMatchForModal}
-        isOpen={Boolean(selectedMatchForModal)}
-        onClose={() => setSelectedMatchForModal(null)}
-      />
+      {selectedMatch && (
+        <Suspense fallback={null}>
+          <MatchDetailModal
+            match={selectedMatch}
+            isOpen
+            onClose={closeModal}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -11,11 +11,8 @@ import {
   Check,
   Loader2,
   Trash2,
-  Layers,
-  Sparkles,
   Shield,
-  Radio,
-  ExternalLink,
+  X,
 } from "lucide-react";
 import { sportsApi } from "@/lib/api";
 import {
@@ -25,7 +22,6 @@ import {
   TrackTeamPayload,
   TrackLeaguePayload,
   TrackedTeam,
-  TrackedLeague,
 } from "@/lib/types";
 import { toast } from "sonner";
 import { translateLeagueName, translateTeamName } from "@/lib/sports-translations";
@@ -139,8 +135,8 @@ function SafeImage({
     const initials = fallbackText || (alt ? alt.substring(0, 2).toUpperCase() : "?");
     return (
       <div
-        className={`flex items-center justify-center font-bold text-[10px] text-white shrink-0 select-none border border-white/10 ${className}`}
-        style={{ backgroundColor: fallbackBg || "#27272a" }}
+        className={`flex items-center justify-center font-bold text-[10px] text-zinc-300 shrink-0 select-none border border-white/[0.08] ${className}`}
+        style={{ backgroundColor: fallbackBg || "#1f1f23" }}
         title={alt}
       >
         {initials}
@@ -381,50 +377,50 @@ export function SportsFavoritesManager() {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-16">
-      {/* Top Breadcrumb & Action Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-[#121214]/80 backdrop-blur-xl border border-white/5 rounded-3xl shadow-xl">
-        <div className="flex items-center gap-4">
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-[#111113] border border-white/[0.06] rounded-2xl">
+        <div className="flex items-center gap-3.5">
           <Link
-            href="/sports"
-            className="p-2.5 rounded-2xl bg-zinc-900 border border-white/5 hover:bg-zinc-800 text-zinc-300 hover:text-white transition-all flex items-center justify-center shrink-0"
-            title="Voltar para a Central de Esportes"
+            to="/sports"
+            className="h-9 w-9 rounded-xl border border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.08] text-zinc-300 hover:text-white transition-colors flex items-center justify-center shrink-0"
+            title="Voltar para Esportes"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl md:text-2xl font-black text-white tracking-tight">
+              <h1 className="text-lg md:text-xl font-bold text-white tracking-tight">
                 Gerenciar Favoritos
               </h1>
               {totalFavoritesCount > 0 && (
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                  {totalFavoritesCount} {totalFavoritesCount === 1 ? "item" : "itens"}
+                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-white/[0.06] text-zinc-300 border border-white/[0.08] tabular-nums">
+                  {totalFavoritesCount} {totalFavoritesCount === 1 ? "selecionado" : "selecionados"}
                 </span>
               )}
             </div>
-            <p className="text-zinc-400 text-xs md:text-sm mt-0.5">
-              Escolha os times e competições que você quer acompanhar no Radar e Placares.
+            <p className="text-zinc-400 text-xs mt-0.5">
+              Escolha os times e competições que você quer acompanhar com destaque no Radar e Placares.
             </p>
           </div>
         </div>
 
         <Link
-          href="/sports"
-          className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-black hover:bg-emerald-400 transition-all self-start sm:self-auto shrink-0 shadow-lg shadow-emerald-500/20"
+          to="/sports"
+          className="inline-flex items-center justify-center px-4 py-2 rounded-xl text-xs font-semibold bg-zinc-100 text-zinc-950 hover:bg-white transition-colors self-start sm:self-auto shrink-0"
         >
-          <span>Concluir e Ver Placares</span>
+          <span>Concluir e ver jogos</span>
         </Link>
       </div>
 
-      {/* Main Tabs (Categorias) */}
+      {/* Main Tabs (Categorias) + Search */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none p-1 bg-[#121214]/60 border border-white/5 rounded-2xl">
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none p-1 bg-[#111113] border border-white/[0.06] rounded-xl">
           <button
             onClick={() => handleSelectCategory("SOCCER")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0 ${
               activeCategory === "SOCCER"
-                ? "bg-emerald-500 text-black shadow-md shadow-emerald-500/20"
-                : "text-zinc-400 hover:text-white hover:bg-white/5"
+                ? "bg-white/[0.1] text-white font-semibold"
+                : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
             }`}
           >
             <span>⚽ Futebol</span>
@@ -432,10 +428,10 @@ export function SportsFavoritesManager() {
 
           <button
             onClick={() => handleSelectCategory("BASKETBALL")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0 ${
               activeCategory === "BASKETBALL"
-                ? "bg-emerald-500 text-black shadow-md shadow-emerald-500/20"
-                : "text-zinc-400 hover:text-white hover:bg-white/5"
+                ? "bg-white/[0.1] text-white font-semibold"
+                : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
             }`}
           >
             <span>🏀 NBA (Basquete)</span>
@@ -443,10 +439,10 @@ export function SportsFavoritesManager() {
 
           <button
             onClick={() => handleSelectCategory("FOOTBALL")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0 ${
               activeCategory === "FOOTBALL"
-                ? "bg-emerald-500 text-black shadow-md shadow-emerald-500/20"
-                : "text-zinc-400 hover:text-white hover:bg-white/5"
+                ? "bg-white/[0.1] text-white font-semibold"
+                : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
             }`}
           >
             <span>🏈 NFL (Futebol Americano)</span>
@@ -454,70 +450,65 @@ export function SportsFavoritesManager() {
 
           <button
             onClick={() => handleSelectCategory("FAVORITES")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0 ${
               activeCategory === "FAVORITES"
-                ? "bg-emerald-500 text-black shadow-md shadow-emerald-500/20"
-                : "text-zinc-400 hover:text-white hover:bg-white/5"
+                ? "bg-white/[0.1] text-white font-semibold"
+                : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
             }`}
           >
             <Star
               className={`w-3.5 h-3.5 ${
-                activeCategory === "FAVORITES" ? "fill-black text-black" : "text-emerald-400"
+                activeCategory === "FAVORITES" ? "fill-white text-white" : "text-zinc-400"
               }`}
             />
             <span>Meus Salvos</span>
             {totalFavoritesCount > 0 && (
-              <span
-                className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                  activeCategory === "FAVORITES"
-                    ? "bg-black/20 text-black"
-                    : "bg-emerald-500/20 text-emerald-400"
-                }`}
-              >
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-white/[0.12] text-zinc-200 tabular-nums">
                 {totalFavoritesCount}
               </span>
             )}
           </button>
         </div>
 
-        {/* Global Search Bar */}
+        {/* Search Bar */}
         {activeCategory !== "FAVORITES" && (
           <div className="relative w-full md:w-80">
-            <Search className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="Buscar qualquer time..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#121214]/60 border border-white/10 rounded-2xl pl-10 pr-4 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50 transition-colors"
+              className="w-full bg-[#111113] border border-white/[0.08] focus:border-white/20 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-zinc-500 outline-none transition-colors"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-500 hover:text-white"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-0.5"
+                title="Limpar busca"
               >
-                Limpar
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
         )}
       </div>
 
-      {/* VIEW 1: MY SAVED FAVORITES */}
+      {/* VIEW 1: MEUS SALVOS */}
       {activeCategory === "FAVORITES" ? (
         <div className="space-y-6">
           {totalFavoritesCount === 0 ? (
-            <div className="py-16 text-center flex flex-col items-center justify-center gap-3 bg-[#121214]/40 rounded-3xl border border-dashed border-white/10">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-                <Star className="w-6 h-6" />
+            <div className="py-16 text-center flex flex-col items-center justify-center gap-3 bg-[#111113] rounded-2xl border border-dashed border-white/[0.08] p-6">
+              <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-zinc-400">
+                <Star className="w-5 h-5" />
               </div>
-              <h3 className="text-base font-bold text-white">Nenhum favorito selecionado</h3>
+              <h3 className="text-sm font-bold text-white">Nenhum favorito selecionado</h3>
               <p className="text-xs text-zinc-400 max-w-sm">
                 Navegue pelas abas de Futebol, NBA ou NFL acima e selecione os times ou ligas que você quer acompanhar.
               </p>
               <button
                 onClick={() => handleSelectCategory("SOCCER")}
-                className="mt-2 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-black hover:bg-emerald-400 transition-all"
+                className="mt-2 px-4 py-2 rounded-xl text-xs font-semibold bg-zinc-100 text-zinc-950 hover:bg-white transition-colors"
               >
                 Explorar Futebol
               </button>
@@ -528,8 +519,8 @@ export function SportsFavoritesManager() {
               {(preferences?.trackedLeagues?.length || 0) > 0 && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between px-1">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-2">
-                      <Trophy className="w-4 h-4" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
+                      <Trophy className="w-3.5 h-3.5" />
                       Competições Seguidas ({preferences?.trackedLeagues?.length})
                     </h3>
                   </div>
@@ -538,25 +529,25 @@ export function SportsFavoritesManager() {
                     {preferences?.trackedLeagues?.map((league) => (
                       <div
                         key={league.league}
-                        className="flex items-center justify-between p-3.5 bg-[#121214]/80 border border-emerald-500/20 rounded-2xl hover:border-emerald-500/40 transition-all"
+                        className="flex items-center justify-between p-3 bg-[#111113] border border-white/[0.06] rounded-xl hover:border-white/[0.12] transition-colors"
                       >
                         <div className="flex items-center gap-3 min-w-0 pr-2">
                           <SafeImage
                             src={league.leagueLogo}
                             alt={league.leagueName}
-                            className="w-7 h-7 object-contain shrink-0"
+                            className="w-6 h-6 object-contain shrink-0"
                           />
-                          <span className="text-xs font-bold text-zinc-200 truncate">
+                          <span className="text-xs font-medium text-zinc-200 truncate">
                             {league.leagueName}
                           </span>
                         </div>
 
                         <button
                           onClick={() => untrackLeagueMutation.mutate(league.league)}
-                          className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.08] transition-colors"
                           title="Remover competição dos favoritos"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     ))}
@@ -568,8 +559,8 @@ export function SportsFavoritesManager() {
               {(preferences?.trackedTeams?.length || 0) > 0 && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between px-1">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-2">
-                      <Shield className="w-4 h-4" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
+                      <Shield className="w-3.5 h-3.5" />
                       Times Favoritos ({preferences?.trackedTeams?.length})
                     </h3>
                   </div>
@@ -578,17 +569,17 @@ export function SportsFavoritesManager() {
                     {preferences?.trackedTeams?.map((team) => (
                       <div
                         key={`${team.sport}::${team.teamId}`}
-                        className="flex items-center justify-between p-3.5 bg-[#121214]/80 border border-emerald-500/20 rounded-2xl hover:border-emerald-500/40 transition-all"
+                        className="flex items-center justify-between p-3 bg-[#111113] border border-white/[0.06] rounded-xl hover:border-white/[0.12] transition-colors"
                       >
                         <div className="flex items-center gap-3 min-w-0 pr-2">
                           <SafeImage
                             src={team.logoUrl}
                             alt={team.teamDisplayName || team.teamName}
-                            className="w-7 h-7 object-contain shrink-0"
+                            className="w-6 h-6 object-contain shrink-0"
                             fallbackBg={team.primaryColor}
                           />
                           <div className="min-w-0">
-                            <span className="text-xs font-bold text-zinc-200 block truncate">
+                            <span className="text-xs font-medium text-zinc-200 block truncate">
                               {team.teamDisplayName || team.teamName}
                             </span>
                             <span className="text-[10px] text-zinc-500 uppercase tracking-wider">
@@ -601,10 +592,10 @@ export function SportsFavoritesManager() {
                           onClick={() =>
                             untrackTeamMutation.mutate({ teamId: team.teamId, sport: team.sport })
                           }
-                          className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.08] transition-colors"
                           title="Remover time dos favoritos"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     ))}
@@ -618,18 +609,18 @@ export function SportsFavoritesManager() {
         /* VIEW 2: GLOBAL SEARCH RESULTS */
         <div className="space-y-4">
           <div className="flex items-center justify-between px-1">
-            <span className="text-xs font-bold text-zinc-400">
+            <span className="text-xs font-medium text-zinc-400">
               Resultados da busca por &quot;{debouncedGlobalQuery}&quot; ({globalSearchResults.length})
             </span>
           </div>
 
           {isLoadingGlobalSearch ? (
-            <div className="py-12 flex flex-col items-center justify-center gap-2">
-              <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
-              <span className="text-xs text-zinc-500">Buscando times...</span>
+            <div className="py-12 flex flex-col items-center justify-center gap-2 text-zinc-500">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span className="text-xs">Buscando times...</span>
             </div>
           ) : globalSearchResults.length === 0 ? (
-            <div className="py-12 text-center bg-[#121214]/40 rounded-3xl border border-white/5">
+            <div className="py-12 text-center bg-[#111113] rounded-2xl border border-white/[0.06]">
               <p className="text-xs text-zinc-400">Nenhum time encontrado para esse termo.</p>
             </div>
           ) : (
@@ -640,21 +631,21 @@ export function SportsFavoritesManager() {
                   <div
                     key={`${team.sport}::${team.id}`}
                     onClick={() => handleToggleTeam(team)}
-                    className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                    className={`flex items-center justify-between p-3 rounded-xl border transition-colors cursor-pointer ${
                       isTracked
-                        ? "bg-emerald-500/10 border-emerald-500/40 shadow-sm"
-                        : "bg-[#121214]/60 border-white/5 hover:border-white/20 hover:bg-[#18181b]"
+                        ? "bg-white/[0.06] border-white/20"
+                        : "bg-[#111113] border-white/[0.06] hover:border-white/[0.14] hover:bg-[#161619]"
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0 pr-2">
                       <SafeImage
                         src={team.logoUrl}
                         alt={translateTeamName(team.displayName || team.name)}
-                        className="w-7 h-7 object-contain shrink-0"
+                        className="w-6 h-6 object-contain shrink-0"
                         fallbackBg={team.color}
                       />
                       <div className="min-w-0">
-                        <span className="text-xs font-bold text-zinc-100 block truncate">
+                        <span className="text-xs font-medium text-zinc-100 block truncate">
                           {translateTeamName(team.displayName || team.name)}
                         </span>
                         <span className="text-[10px] text-zinc-500 uppercase tracking-wider">
@@ -665,15 +656,16 @@ export function SportsFavoritesManager() {
 
                     <button
                       type="button"
-                      className={`p-1.5 rounded-xl text-xs font-bold transition-all ${
+                      className={`p-1.5 rounded-lg text-xs transition-colors shrink-0 ${
                         isTracked
-                          ? "bg-emerald-500 text-black shadow-sm"
-                          : "bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10"
+                          ? "bg-zinc-100 text-zinc-950"
+                          : "text-zinc-500 hover:text-white hover:bg-white/[0.08]"
                       }`}
+                      title={isTracked ? "Remover dos favoritos" : "Adicionar aos favoritos"}
                     >
                       <Star
                         className={`w-3.5 h-3.5 ${
-                          isTracked ? "fill-black text-black" : "text-zinc-400"
+                          isTracked ? "fill-zinc-950 text-zinc-950" : ""
                         }`}
                       />
                     </button>
@@ -685,7 +677,7 @@ export function SportsFavoritesManager() {
         </div>
       ) : (
         /* VIEW 3: LEAGUE & TEAMS BROWSER */
-        <div className="space-y-6">
+        <div className="space-y-5">
           {/* Sub-league selector pills */}
           {currentCategoryLeagues.length > 1 && (
             <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1">
@@ -699,10 +691,10 @@ export function SportsFavoritesManager() {
                       setSelectedLeagueSlug(league.slug);
                       setSearchQuery("");
                     }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl text-xs font-bold transition-all shrink-0 border ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors shrink-0 border ${
                       isSelected
-                        ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40 shadow-sm"
-                        : "bg-[#121214]/60 text-zinc-400 hover:text-white border-white/5 hover:border-white/15"
+                        ? "bg-white/[0.1] text-white border-white/20 font-semibold"
+                        : "bg-[#111113] text-zinc-400 hover:text-white border-white/[0.06] hover:border-white/[0.12]"
                     }`}
                   >
                     <SafeImage
@@ -712,7 +704,7 @@ export function SportsFavoritesManager() {
                     />
                     <span>{league.abbreviation || league.name}</span>
                     {isTracked && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 ml-0.5" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 ml-0.5" title="Competição favoritada" />
                     )}
                   </button>
                 );
@@ -721,20 +713,20 @@ export function SportsFavoritesManager() {
           )}
 
           {/* Current League Action Card */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 md:p-5 bg-gradient-to-r from-[#121214] via-[#16161a] to-[#121214] border border-white/10 rounded-3xl">
-            <div className="flex items-center gap-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-[#111113] border border-white/[0.08] rounded-2xl">
+            <div className="flex items-center gap-3">
               <SafeImage
                 src={currentLeague.logoUrl}
                 alt={translateLeagueName(currentLeague.displayName || currentLeague.name, currentLeague.slug)}
-                className="w-10 h-10 object-contain shrink-0"
+                className="w-8 h-8 object-contain shrink-0"
               />
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-sm md:text-base font-bold text-white">
+                  <h2 className="text-sm font-bold text-white">
                     {translateLeagueName(currentLeague.displayName || currentLeague.name, currentLeague.slug)}
                   </h2>
                   {isCurrentLeagueTracked && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                       Liga Seguida
                     </span>
                   )}
@@ -747,15 +739,15 @@ export function SportsFavoritesManager() {
 
             <button
               onClick={() => handleToggleLeague(currentLeague)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all self-start sm:self-auto shrink-0 ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-colors self-start sm:self-auto shrink-0 border ${
                 isCurrentLeagueTracked
-                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30"
-                  : "bg-white/10 text-white hover:bg-white/15 border border-white/10"
+                  ? "bg-white/[0.08] text-white border-white/20 hover:bg-white/[0.12]"
+                  : "bg-white/[0.04] text-zinc-300 border-white/[0.08] hover:bg-white/[0.08] hover:text-white"
               }`}
             >
               {isCurrentLeagueTracked ? (
                 <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <Check className="w-3.5 h-3.5 text-zinc-200" />
                   <span>Seguindo Liga</span>
                 </>
               ) : (
@@ -770,25 +762,25 @@ export function SportsFavoritesManager() {
           {/* Teams Grid */}
           <div>
             <div className="flex items-center justify-between px-1 mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                 Times Disponíveis ({filteredTeams.length})
               </span>
               <span className="text-[11px] text-zinc-500">
-                Clique no time para favoritar/desfavoritar
+                Clique no time para favoritar
               </span>
             </div>
 
             {isLoadingTeams ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 py-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 py-4">
                 {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                   <div
                     key={i}
-                    className="h-16 rounded-2xl bg-zinc-900/50 border border-white/5 animate-pulse"
+                    className="h-14 rounded-xl bg-white/[0.02] border border-white/[0.04] animate-pulse"
                   />
                 ))}
               </div>
             ) : filteredTeams.length === 0 ? (
-              <div className="py-12 text-center bg-[#121214]/40 rounded-3xl border border-white/5">
+              <div className="py-12 text-center bg-[#111113] rounded-2xl border border-white/[0.06]">
                 <p className="text-xs text-zinc-400">Nenhum time encontrado nesta liga.</p>
               </div>
             ) : (
@@ -799,21 +791,21 @@ export function SportsFavoritesManager() {
                     <div
                       key={team.id}
                       onClick={() => handleToggleTeam(team)}
-                      className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                      className={`flex items-center justify-between p-3 rounded-xl border transition-colors cursor-pointer ${
                         isTracked
-                          ? "bg-emerald-500/10 border-emerald-500/40 shadow-sm"
-                          : "bg-[#121214]/60 border-white/5 hover:border-white/20 hover:bg-[#18181b]"
+                          ? "bg-white/[0.06] border-white/20"
+                          : "bg-[#111113] border-white/[0.06] hover:border-white/[0.12] hover:bg-[#161619]"
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0 pr-2">
                         <SafeImage
                           src={team.logoUrl}
                           alt={translateTeamName(team.displayName || team.name)}
-                          className="w-7 h-7 object-contain shrink-0"
+                          className="w-6 h-6 object-contain shrink-0"
                           fallbackBg={team.color}
                         />
                         <div className="min-w-0">
-                          <span className="text-xs font-bold text-zinc-100 block truncate">
+                          <span className="text-xs font-medium text-zinc-100 block truncate">
                             {translateTeamName(team.displayName || team.name)}
                           </span>
                           <span className="text-[10px] text-zinc-500 uppercase tracking-wider">
@@ -824,16 +816,16 @@ export function SportsFavoritesManager() {
 
                       <button
                         type="button"
-                        className={`p-1.5 rounded-xl text-xs font-bold transition-all ${
+                        className={`p-1.5 rounded-lg text-xs transition-colors shrink-0 ${
                           isTracked
-                            ? "bg-emerald-500 text-black shadow-sm"
-                            : "bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10"
+                            ? "bg-zinc-100 text-zinc-950"
+                            : "text-zinc-500 hover:text-white hover:bg-white/[0.08]"
                         }`}
                         title={isTracked ? "Remover dos favoritos" : "Adicionar aos favoritos"}
                       >
                         <Star
                           className={`w-3.5 h-3.5 ${
-                            isTracked ? "fill-black text-black" : "text-zinc-400"
+                            isTracked ? "fill-zinc-950 text-zinc-950" : ""
                           }`}
                         />
                       </button>
