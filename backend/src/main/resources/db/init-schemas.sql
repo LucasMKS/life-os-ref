@@ -31,3 +31,20 @@ CREATE TABLE IF NOT EXISTS gaming.user_tracked_twitch_channels (
 
 ALTER TABLE gaming.user_tracked_twitch_channels ADD COLUMN IF NOT EXISTS record_vod BOOLEAN DEFAULT FALSE;
 ALTER TABLE gaming.user_tracked_twitch_channels ADD COLUMN IF NOT EXISTS record_quality VARCHAR(30) DEFAULT '720p60';
+
+-- Tabela de Notificações / Lembretes Personalizados
+CREATE TABLE IF NOT EXISTS notifications.custom_notifications (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    time VARCHAR(10) NOT NULL,
+    recurrence VARCHAR(50) NOT NULL DEFAULT 'DAILY',
+    days_of_week VARCHAR(255),
+    specific_date DATE,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    send_telegram BOOLEAN NOT NULL DEFAULT TRUE,
+    last_triggered_at TIMESTAMP,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);

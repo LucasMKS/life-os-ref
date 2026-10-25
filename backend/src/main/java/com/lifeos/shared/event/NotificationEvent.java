@@ -11,8 +11,17 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class NotificationEvent {
     private String message;
-    private String type; // F1, FINANCE, TWITCH, GAMING, READING, SPORTS, MEDIA, WEATHER, SYSTEM
+    private String type; // F1, FINANCE, TWITCH, GAMING, READING, SPORTS, MEDIA, WEATHER, SYSTEM, CUSTOM
     private String buttonLabel;
     private String buttonPath;
     private String userId;
+
+    @Builder.Default
+    private boolean sendTelegram = true;
+
+    @Builder.Default
+    private boolean ignoreQuietHours = false;
+
+    @Builder.Default
+    private boolean skipTelegramDedup = false;
 }

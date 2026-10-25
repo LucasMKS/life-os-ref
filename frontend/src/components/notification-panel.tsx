@@ -18,6 +18,7 @@ import {
   Film,
   Tv,
   CloudSun,
+  Sparkles,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
@@ -41,6 +42,7 @@ const getIcon = (type: string) => {
     case "MEDIA": return <Film className="text-purple-400" size={16} />;
     case "TWITCH": return <Tv className="text-violet-400" size={16} />;
     case "WEATHER": return <CloudSun className="text-cyan-400" size={16} />;
+    case "CUSTOM": return <Sparkles className="text-rose-400" size={16} />;
     default: return <BellRing className="text-zinc-400" size={16} />;
   }
 };
@@ -60,6 +62,7 @@ const getBgColor = (type: string) => {
     case "MEDIA": return "bg-purple-500/10 border-purple-500/20";
     case "TWITCH": return "bg-violet-500/10 border-violet-500/20";
     case "WEATHER": return "bg-cyan-500/10 border-cyan-500/20";
+    case "CUSTOM": return "bg-rose-500/10 border-rose-500/20";
     default: return "bg-white/5 border-white/10";
   }
 };

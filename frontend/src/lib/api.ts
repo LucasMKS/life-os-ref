@@ -8,6 +8,8 @@ import {
   AuthResponse,
   AppNotification,
   UserNotificationSettings,
+  CustomNotification,
+  CustomNotificationRequest,
   SportLeague,
   SportTeam,
   SportMatch,
@@ -356,6 +358,41 @@ export const notificationSettingsApi = {
     const response = await api.post("/notifications/settings/test-telegram", {
       chatId,
     });
+    return response.data;
+  },
+};
+
+export const customNotificationApi = {
+  getAll: async (): Promise<CustomNotification[]> => {
+    const response = await api.get("/notifications/custom");
+    return response.data;
+  },
+  getById: async (id: string): Promise<CustomNotification> => {
+    const response = await api.get(`/notifications/custom/${id}`);
+    return response.data;
+  },
+  create: async (data: CustomNotificationRequest): Promise<CustomNotification> => {
+    const response = await api.post("/notifications/custom", data);
+    return response.data;
+  },
+  update: async (
+    id: string,
+    data: Partial<CustomNotificationRequest>
+  ): Promise<CustomNotification> => {
+    const response = await api.put(`/notifications/custom/${id}`, data);
+    return response.data;
+  },
+  toggleEnabled: async (id: string): Promise<CustomNotification> => {
+    const response = await api.patch(`/notifications/custom/${id}/toggle`);
+    return response.data;
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/notifications/custom/${id}`);
+  },
+  testTrigger: async (
+    id: string
+  ): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post(`/notifications/custom/${id}/test`);
     return response.data;
   },
 };

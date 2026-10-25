@@ -45,6 +45,7 @@ public class DynamicNotificationScheduler {
     private final FinanceNotificationScheduler financeNotificationScheduler;
     private final MediaNotificationScheduler mediaNotificationScheduler;
     private final SportsNotificationScheduler sportsNotificationScheduler;
+    private final com.lifeos.modules.notification.service.CustomNotificationService customNotificationService;
 
     private final Set<String> localFallbackDispatched = ConcurrentHashMap.newKeySet();
 
@@ -166,6 +167,13 @@ public class DynamicNotificationScheduler {
                     }
                 }
             }
+        }
+
+        // 7. Notificações / Lembretes Personalizados do Usuário
+        try {
+            customNotificationService.dispatchDueNotifications(now, LocalDate.now(BRT));
+        } catch (Exception e) {
+            log.error("Erro ao despachar notificações personalizadas: {}", e.getMessage(), e);
         }
     }
 

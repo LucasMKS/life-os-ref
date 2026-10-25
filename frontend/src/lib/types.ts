@@ -295,9 +295,38 @@ export interface AppNotification {
   id: string;
   userId?: string;
   message: string;
-  type: "F1" | "FINANCE" | "GAMING" | "READING" | "SYSTEM" | "SPORTS";
+  type: "F1" | "FINANCE" | "GAMING" | "READING" | "SYSTEM" | "SPORTS" | "MEDIA" | "TWITCH" | "WEATHER" | "CUSTOM";
   isRead: boolean;
   createdAt: string;
+}
+
+export type RecurrenceType = "DAILY" | "WEEKDAYS" | "WEEKENDS" | "SPECIFIC_DAYS" | "ONCE";
+
+export interface CustomNotification {
+  id: string;
+  userId: string;
+  title: string;
+  description?: string | null;
+  time: string;
+  recurrence: RecurrenceType;
+  daysOfWeek?: string | null;
+  specificDate?: string | null;
+  enabled: boolean;
+  sendTelegram: boolean;
+  lastTriggeredAt?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface CustomNotificationRequest {
+  title: string;
+  description?: string;
+  time: string;
+  recurrence: RecurrenceType;
+  daysOfWeek?: string;
+  specificDate?: string;
+  enabled?: boolean;
+  sendTelegram?: boolean;
 }
 
 export interface UserNotificationSettings {

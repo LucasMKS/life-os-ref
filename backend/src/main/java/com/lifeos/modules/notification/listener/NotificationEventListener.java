@@ -38,12 +38,21 @@ public class NotificationEventListener {
             String type = (event.getType() != null && !event.getType().isBlank()) ? event.getType().toUpperCase() : "SYSTEM";
             String userId = (event.getUserId() != null && !event.getUserId().isBlank()) ? event.getUserId() : ownerUserId;
 
-            if (!notificationSettingsService.isNotificationAllowed(userId, type)) {
+            boolean allowed = event.isIgnoreQuietHours()
+                    ? (notificationSettingsService.getSettings(userId).isTelegramEnabled() || "CUSTOM".equalsIgnoreCase(type))
+                    : notificationSettingsService.isNotificationAllowed(userId, type);
+
+            if (!allowed) {
                 log.info("Notificação do tipo {} para usuário {} ignorada devido às preferências/quiet hours.", type, userId);
                 return;
             }
 
             notificationService.saveAndNotify(event.getMessage(), type, userId);
+
+            if (!event.isSendTelegram()) {
+                log.debug("Envio para o Telegram desabilitado para o evento tipo {}.", type);
+                return;
+            }
 
             String targetChatId = notificationSettingsService.getEffectiveChatId(userId);
 
@@ -63,8 +72,8 @@ public class NotificationEventListener {
                 }
             }
 
-            // Salvaguarda anti-duplicação no Telegram por conteúdo + chatId + dia
-            if (redisTemplate != null && event.getMessage() != null) {
+            // Salvaguarda anti-duplicação no Telegram por conteúdo + chatId + dia (exceto se explicitamente pulada, ex: testes)
+            if (!event.isSkipTelegramDedup() && redisTemplate != null && event.getMessage() != null) {
                 String today = java.time.LocalDate.now(BRT).toString();
                 String msgHash = Integer.toHexString(event.getMessage().trim().hashCode());
                 String dedupKey = "notif_event_dedup:" + (targetChatId != null ? targetChatId : "default") + ":" + type + ":" + msgHash + ":" + today;

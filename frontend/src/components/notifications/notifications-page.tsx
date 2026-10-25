@@ -18,13 +18,16 @@ import {
   Film,
   Tv,
   CloudSun,
+  AlarmClock,
+  Sparkles,
 } from "lucide-react";
 import { notificationApi } from "@/lib/api";
 import { AppNotification } from "@/lib/types";
 import { toast } from "sonner";
 import { NotificationSettingsView } from "./notification-settings-view";
+import { CustomNotificationsView } from "./custom-notifications-view";
 
-type FilterType = "ALL" | "SPORTS" | "F1" | "FINANCE" | "GAMING" | "READING" | "MEDIA" | "TWITCH" | "WEATHER" | "SYSTEM";
+type FilterType = "ALL" | "SPORTS" | "F1" | "FINANCE" | "GAMING" | "READING" | "MEDIA" | "TWITCH" | "WEATHER" | "CUSTOM" | "SYSTEM";
 
 const FILTERS: { label: string; value: FilterType; color: string; activeClass: string }[] = [
   { label: "Todas", value: "ALL", color: "text-zinc-400", activeClass: "bg-white/10 border-white/20 text-white" },
@@ -36,6 +39,7 @@ const FILTERS: { label: string; value: FilterType; color: string; activeClass: s
   { label: "Mídia", value: "MEDIA", color: "text-purple-400", activeClass: "bg-purple-500/10 border-purple-500/30 text-purple-400" },
   { label: "Twitch", value: "TWITCH", color: "text-violet-400", activeClass: "bg-violet-500/10 border-violet-500/30 text-violet-400" },
   { label: "Clima", value: "WEATHER", color: "text-cyan-400", activeClass: "bg-cyan-500/10 border-cyan-500/30 text-cyan-400" },
+  { label: "Personalizadas", value: "CUSTOM", color: "text-rose-400", activeClass: "bg-rose-500/10 border-rose-500/30 text-rose-400" },
 ];
 
 const getIcon = (type: string) => {
@@ -48,6 +52,7 @@ const getIcon = (type: string) => {
     case "MEDIA": return <Film className="text-purple-400" size={15} />;
     case "TWITCH": return <Tv className="text-violet-400" size={15} />;
     case "WEATHER": return <CloudSun className="text-cyan-400" size={15} />;
+    case "CUSTOM": return <Sparkles className="text-rose-400" size={15} />;
     default: return <BellRing className="text-zinc-400" size={15} />;
   }
 };
@@ -62,6 +67,7 @@ const getBgColor = (type: string) => {
     case "MEDIA": return "bg-purple-500/10 border-purple-500/20";
     case "TWITCH": return "bg-violet-500/10 border-violet-500/20";
     case "WEATHER": return "bg-cyan-500/10 border-cyan-500/20";
+    case "CUSTOM": return "bg-rose-500/10 border-rose-500/20";
     default: return "bg-white/5 border-white/10";
   }
 };
@@ -86,7 +92,7 @@ function groupByDate(notifications: AppNotification[]): Record<string, AppNotifi
 
 export function NotificationsPage() {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"feed" | "settings">("feed");
+  const [activeTab, setActiveTab] = useState<"feed" | "custom" | "settings">("feed");
   const [activeFilter, setActiveFilter] = useState<FilterType>("ALL");
 
   const { data: notifications = [], isLoading } = useQuery<AppNotification[]>({
@@ -176,6 +182,19 @@ export function NotificationsPage() {
 
           <button
             type="button"
+            onClick={() => setActiveTab("custom")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+              activeTab === "custom"
+                ? "bg-white/10 text-white shadow-sm border border-white/10"
+                : "text-zinc-400 hover:text-white"
+            }`}
+          >
+            <AlarmClock size={16} className={activeTab === "custom" ? "text-blue-400" : "text-zinc-400"} />
+            <span>Lembretes Personalizados</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab("settings")}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
               activeTab === "settings"
@@ -187,6 +206,9 @@ export function NotificationsPage() {
             <span>Configurações & Horários</span>
           </button>
         </div>
+
+        {/* ABA: LEMBRETES PERSONALIZADOS */}
+        {activeTab === "custom" && <CustomNotificationsView />}
 
         {/* ABA: CONFIGURAÇÕES */}
         {activeTab === "settings" && <NotificationSettingsView />}
