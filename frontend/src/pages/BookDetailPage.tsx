@@ -329,13 +329,32 @@ export default function BookDetailsPage() {
 
     const PAGE_SIZE = 30;
     const totalPages = Math.ceil(allDays.length / PAGE_SIZE) || 1;
+    const safePage = Math.min(calendarPage, totalPages - 1);
     const paginatedSlice = allDays.slice(
-      calendarPage * PAGE_SIZE,
-      (calendarPage + 1) * PAGE_SIZE,
+      safePage * PAGE_SIZE,
+      (safePage + 1) * PAGE_SIZE,
+    );
+    const firstDay = paginatedSlice[0];
+    const lastDay = paginatedSlice[paginatedSlice.length - 1];
+    const formatShort = (label: string) => label.replace(/\s+de\s+\d{4}$/, "");
+    const pageRangeLabel =
+      firstDay && lastDay
+        ? firstDay.dateKey === lastDay.dateKey
+          ? formatShort(firstDay.date)
+          : `${formatShort(firstDay.date)} — ${formatShort(lastDay.date)}`
+        : "";
+    const pagePagesTotal = paginatedSlice.reduce(
+      (sum, d) => sum + (d?.pages || 0),
+      0,
     );
     while (paginatedSlice.length < PAGE_SIZE) paginatedSlice.push(null as any);
 
-    return { days: paginatedSlice, totalPages };
+    return {
+      days: paginatedSlice,
+      totalPages,
+      pageRangeLabel,
+      pagePagesTotal,
+    };
   };
 
   const getReadingDuration = () => {
@@ -350,14 +369,24 @@ export default function BookDetailsPage() {
     return diffDays === 0 ? 1 : diffDays;
   };
 
-  const { days: calendarDays, totalPages: calendarTotalPages } =
-    generateReadingCalendar();
+  const {
+    days: calendarDays,
+    totalPages: calendarTotalPages,
+    pageRangeLabel,
+    pagePagesTotal,
+  } = generateReadingCalendar();
 
+  const initializedBookIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (calendarTotalPages > 0 && calendarPage === 0) {
+    if (
+      book?.id &&
+      calendarTotalPages > 0 &&
+      initializedBookIdRef.current !== book.id
+    ) {
+      initializedBookIdRef.current = book.id;
       setCalendarPage(calendarTotalPages - 1);
     }
-  }, [calendarTotalPages, calendarPage]);
+  }, [book?.id, calendarTotalPages]);
 
   useEffect(() => {
     if (editingDay) document.body.style.overflow = "hidden";
@@ -472,9 +501,9 @@ export default function BookDetailsPage() {
         <ArrowLeft className="w-4 h-4" /> Voltar para a Estante
       </button>
 
-      {/* Book Header */}
-      <div className="flex flex-col lg:flex-row gap-6 md:gap-8 mb-8">
-        <div className="w-44 sm:w-52 lg:w-60 shrink-0 mx-auto lg:mx-0 flex flex-col gap-2">
+      {/* Book Header (Hero) */}
+      <div className="flex flex-col md:flex-row gap-6 md:gap-8 mb-8 items-start">
+        <div className="w-44 sm:w-52 shrink-0 mx-auto md:mx-0 flex flex-col gap-2">
           <div className="relative rounded-2xl overflow-hidden border border-white/[0.08] bg-zinc-900 group/cover">
             <SmartBookCover
               url={book.coverUrl}
@@ -737,110 +766,9 @@ export default function BookDetailsPage() {
             )}
           </SurfacePanel>
         </div>
-
-        {/* Reading Rhythm Calendar */}
-        <div className="w-full lg:w-[320px] shrink-0">
-          <SurfacePanel
-            accent="emerald"
-            title="Ritmo"
-            icon={<TrendingUp className="w-4 h-4 text-emerald-400" />}
-            action={
-              calendarTotalPages > 1 ? (
-                <div className="flex items-center gap-1.5 text-zinc-400">
-                  <button
-                    type="button"
-                    onClick={() => setCalendarPage((p) => Math.max(0, p - 1))}
-                    disabled={calendarPage === 0}
-                    className="p-1 hover:text-white disabled:opacity-30 transition-colors"
-                    aria-label="Página anterior"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                  </button>
-                  <span className="text-[11px] font-mono tabular-nums">
-                    {calendarPage + 1}/{calendarTotalPages}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCalendarPage((p) =>
-                        Math.min(calendarTotalPages - 1, p + 1),
-                      )
-                    }
-                    disabled={calendarPage === calendarTotalPages - 1}
-                    className="p-1 hover:text-white disabled:opacity-30 transition-colors"
-                    aria-label="Próxima página"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ) : null
-            }
-          >
-            <div className="grid grid-cols-10 gap-1.5 mb-4">
-              {calendarDays.map((day, idx) =>
-                day ? (
-                  day.isEditable ? (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => {
-                        setEditingDay({
-                          dateKey: day.dateKey,
-                          dateLabel: day.date,
-                          pages: day.pages,
-                        });
-                        setEditingValue(String(day.pages));
-                        setConfirmReversion(false);
-                      }}
-                      title={`${day.pages} págs • ${day.date} (clique para editar)`}
-                      style={{ touchAction: "manipulation" }}
-                      className="relative group/day aspect-square focus:outline-none focus:ring-1 focus:ring-white/40 rounded"
-                    >
-                      <div
-                        className={`w-full h-full rounded border transition-colors ${day.intensityClass} cursor-pointer`}
-                      />
-                      <span className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-white/70 pointer-events-none" />
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-[#161619] text-white text-[10px] font-medium rounded-lg opacity-0 group-hover/day:opacity-100 pointer-events-none transition-opacity whitespace-nowrap border border-white/[0.12] z-50">
-                        {day.pages > 0 ? `${day.pages} págs` : "0 págs"} •{" "}
-                        {day.date}
-                        <div className="text-[9px] text-emerald-400 mt-0.5">
-                          Clique para editar
-                        </div>
-                      </div>
-                    </button>
-                  ) : (
-                    <div key={idx} className="relative group/day aspect-square">
-                      <div
-                        className={`w-full h-full rounded border ${day.intensityClass} cursor-default`}
-                      />
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-[#161619] text-white text-[10px] font-medium rounded-lg opacity-0 group-hover/day:opacity-100 pointer-events-none transition-opacity whitespace-nowrap border border-white/[0.12] z-50">
-                        {day.pages > 0 ? `${day.pages} págs` : "0 págs"} •{" "}
-                        {day.date}
-                      </div>
-                    </div>
-                  )
-                ) : (
-                  <div
-                    key={idx}
-                    className="w-full aspect-square rounded bg-transparent border border-transparent"
-                  />
-                ),
-              )}
-            </div>
-
-            <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 justify-end">
-              <span>Menos</span>
-              <div className="w-2.5 h-2.5 rounded bg-white/[0.04] border border-white/[0.06]" />
-              <div className="w-2.5 h-2.5 rounded bg-emerald-950/80 border border-emerald-800/50" />
-              <div className="w-2.5 h-2.5 rounded bg-emerald-700/60 border border-emerald-600/50" />
-              <div className="w-2.5 h-2.5 rounded bg-emerald-500/80 border border-emerald-400/60" />
-              <span>Mais</span>
-            </div>
-          </SurfacePanel>
-        </div>
       </div>
 
-      {/* Notes & Final Review */}
+      {/* Main Content Grid: Notes (Left 7 cols) | Rhythm + Final Review (Right 5 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <div className="lg:col-span-7">
           <SurfacePanel
@@ -997,8 +925,118 @@ export default function BookDetailsPage() {
           </SurfacePanel>
         </div>
 
-        {/* Final Review */}
-        <div className="lg:col-span-5 lg:sticky lg:top-20">
+        {/* Right Column: Ritmo + Final Review */}
+        <div className="lg:col-span-5 flex flex-col gap-6">
+          <SurfacePanel
+            accent="emerald"
+            title="Ritmo de Leitura"
+            icon={<TrendingUp className="w-4 h-4 text-emerald-400" />}
+            action={
+              calendarTotalPages > 1 ? (
+                <div className="flex items-center gap-1 text-zinc-400">
+                  <button
+                    type="button"
+                    onClick={() => setCalendarPage((p) => Math.max(0, p - 1))}
+                    disabled={calendarPage === 0}
+                    className="p-1 rounded-lg hover:bg-white/[0.06] hover:text-white disabled:opacity-30 transition-colors"
+                    aria-label="Página anterior"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-[11px] font-mono tabular-nums px-1">
+                    {calendarPage + 1}/{calendarTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCalendarPage((p) =>
+                        Math.min(calendarTotalPages - 1, p + 1),
+                      )
+                    }
+                    disabled={calendarPage === calendarTotalPages - 1}
+                    className="p-1 rounded-lg hover:bg-white/[0.06] hover:text-white disabled:opacity-30 transition-colors"
+                    aria-label="Próxima página"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : null
+            }
+          >
+            {(pageRangeLabel || pagePagesTotal > 0) && (
+              <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-3">
+                <span className="font-medium">{pageRangeLabel}</span>
+                <span className="font-mono text-zinc-300 tabular-nums">
+                  {pagePagesTotal} {pagePagesTotal === 1 ? "pág" : "págs"} no período
+                </span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-10 gap-1.5 mb-4">
+              {calendarDays.map((day, idx) =>
+                day ? (
+                  day.isEditable ? (
+                    <button
+                      key={day.dateKey}
+                      type="button"
+                      onClick={() => {
+                        setEditingDay({
+                          dateKey: day.dateKey,
+                          dateLabel: day.date,
+                          pages: day.pages,
+                        });
+                        setEditingValue(String(day.pages));
+                        setConfirmReversion(false);
+                      }}
+                      title={`${day.pages} págs • ${day.date} (clique para editar)`}
+                      style={{ touchAction: "manipulation" }}
+                      className="relative group/day aspect-square focus:outline-none focus:ring-1 focus:ring-white/40 rounded"
+                    >
+                      <div
+                        className={`w-full h-full rounded border transition-colors ${day.intensityClass} cursor-pointer`}
+                      />
+                      <span className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-white/70 pointer-events-none" />
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-[#161619] text-white text-[10px] font-medium rounded-lg opacity-0 group-hover/day:opacity-100 pointer-events-none transition-opacity whitespace-nowrap border border-white/[0.12] z-50">
+                        {day.pages > 0 ? `${day.pages} págs` : "0 págs"} •{" "}
+                        {day.date}
+                        <div className="text-[9px] text-emerald-400 mt-0.5">
+                          Clique para editar
+                        </div>
+                      </div>
+                    </button>
+                  ) : (
+                    <div key={day.dateKey} className="relative group/day aspect-square">
+                      <div
+                        className={`w-full h-full rounded border ${day.intensityClass} cursor-default`}
+                      />
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-[#161619] text-white text-[10px] font-medium rounded-lg opacity-0 group-hover/day:opacity-100 pointer-events-none transition-opacity whitespace-nowrap border border-white/[0.12] z-50">
+                        {day.pages > 0 ? `${day.pages} págs` : "0 págs"} •{" "}
+                        {day.date}
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <div
+                    key={`empty-${idx}`}
+                    className="w-full aspect-square rounded bg-transparent border border-transparent"
+                  />
+                ),
+              )}
+            </div>
+
+            <div className="flex items-center justify-between text-[10px] text-zinc-500">
+              <span>Ponto branco = editável (hoje/ontem)</span>
+              <div className="flex items-center gap-1.5">
+                <span>Menos</span>
+                <div className="w-2.5 h-2.5 rounded bg-white/[0.04] border border-white/[0.06]" />
+                <div className="w-2.5 h-2.5 rounded bg-emerald-950/80 border border-emerald-800/50" />
+                <div className="w-2.5 h-2.5 rounded bg-emerald-700/60 border border-emerald-600/50" />
+                <div className="w-2.5 h-2.5 rounded bg-emerald-500/80 border border-emerald-400/60" />
+                <span>Mais</span>
+              </div>
+            </div>
+          </SurfacePanel>
+
           <SurfacePanel
             title="Resenha Final"
             icon={<CheckCircle2 className="w-4 h-4" />}

@@ -14,6 +14,7 @@ import com.lifeos.modules.reading.repository.ReadingSessionRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.Hibernate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
@@ -245,7 +246,7 @@ public class ReadingService {
             book.setStartedAt(LocalDateTime.now());
         }
 
-        return repository.save(book);
+        return initializeDetails(repository.save(book));
     }
 
     @Transactional(readOnly = true)
@@ -389,7 +390,7 @@ public class ReadingService {
             book.setFinishedAt(null);
         }
 
-        return repository.save(book);
+        return initializeDetails(repository.save(book));
     }
 
     public List<ReadingPulseDTO> getReadingPulse(String userId) {
@@ -518,6 +519,7 @@ public class ReadingService {
         });
     }
 
+    @Transactional
     public Book updateCoverUrl(String userId, String bookId, String coverUrl) {
         log.info("Atualizando capa do livro {} para o usuário {}", bookId, userId);
         return repository.findById(bookId).map(book -> {
@@ -525,10 +527,11 @@ public class ReadingService {
                 throw new IllegalArgumentException("Acesso negado.");
             }
             book.setCoverUrl(coverUrl != null && !coverUrl.isBlank() ? coverUrl.trim() : null);
-            return repository.save(book);
+            return initializeDetails(repository.save(book));
         }).orElseThrow(() -> new NoSuchElementException("Livro não encontrado: " + bookId));
     }
 
+    @Transactional
     public Book updateAuthor(String userId, String bookId, String author) {
         log.info("Atualizando autor do livro {} para '{}' para o usuário {}", bookId, author, userId);
         return repository.findById(bookId).map(book -> {
@@ -536,10 +539,11 @@ public class ReadingService {
                 throw new IllegalArgumentException("Acesso negado.");
             }
             book.setAuthor(author != null && !author.isBlank() ? author.trim() : "Autor Desconhecido");
-            return repository.save(book);
+            return initializeDetails(repository.save(book));
         }).orElseThrow(() -> new NoSuchElementException("Livro não encontrado: " + bookId));
     }
 
+    @Transactional
     public Book rateBook(String userId, String bookId, Double rating, String review) {
         log.info("Adicionando resenha ao livro {} pelo usuário {}", bookId, userId);
         return repository.findById(bookId).map(book -> {
@@ -552,7 +556,7 @@ public class ReadingService {
                 book.setReview(review);
             }
 
-            return repository.save(book);
+            return initializeDetails(repository.save(book));
         }).orElseThrow(() -> new NoSuchElementException("Livro não encontrado: " + bookId));
     }
 
@@ -562,8 +566,14 @@ public class ReadingService {
             if (userId != null && !userId.equals(book.getUserId())) {
                 throw new IllegalArgumentException("Acesso negado.");
             }
-            return book;
+            return initializeDetails(book);
         }).orElseThrow(() -> new NoSuchElementException("Livro não encontrado: " + bookId));
+    }
+
+    private Book initializeDetails(Book book) {
+        Hibernate.initialize(book.getSessions());
+        Hibernate.initialize(book.getNotes());
+        return book;
     }
 
     public BookNote addBookNote(String userId, String bookId, String noteText) {
