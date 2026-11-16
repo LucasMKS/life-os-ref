@@ -73,7 +73,7 @@ export default function Home() {
           <GamingWidget />
         </MasonryItem>
 
-        <MasonryItem colSpan={2}>
+        <MasonryItem colSpan={1}>
           <ReadingPulseWidget />
         </MasonryItem>
 

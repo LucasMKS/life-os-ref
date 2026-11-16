@@ -154,7 +154,7 @@ export function SportsWidget() {
                     <Clock className="w-3 h-3 text-zinc-400" />
                     {featuredMatch.status === "FINISHED"
                       ? "Finalizado"
-                      : `Hoje ${formatMatchTime(featuredMatch.matchDate || featuredMatch.date)}`}
+                      : formatMatchTime(featuredMatch.matchDate || featuredMatch.date)}
                   </span>
                 </div>
               )}

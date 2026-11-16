@@ -103,7 +103,7 @@ public class F1Service {
 
         try {
             String responseBody = jolpiWebClient.get()
-                    .uri("/current/driverStandings.json")
+                    .uri("/current/driverStandings.json?limit=100")
                     .retrieve()
                     .bodyToMono(String.class)
                     .block();
@@ -129,10 +129,10 @@ public class F1Service {
                 return fallbackToStandingsSnapshot(season);
 
             refreshStandingsSnapshot(standings);
-            return standings.stream().limit(22).toList();
+            return standings;
         } catch (Exception ex) {
             log.error("Failed to fetch driver standings from Jolpi API: {}", ex.getMessage());
-            return fallbackToStandingsSnapshot(season).stream().limit(10).toList();
+            return fallbackToStandingsSnapshot(season);
         }
     }
 
@@ -167,10 +167,10 @@ public class F1Service {
                 return fallbackToConstructorSnapshot(season);
 
             refreshConstructorSnapshot(standings);
-            return standings.stream().limit(11).toList();
+            return standings;
         } catch (Exception ex) {
             log.error("Failed to fetch constructor standings from Jolpi API: {}", ex.getMessage());
-            return fallbackToConstructorSnapshot(season).stream().limit(5).toList();
+            return fallbackToConstructorSnapshot(season);
         }
     }
 

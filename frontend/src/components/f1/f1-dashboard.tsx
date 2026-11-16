@@ -346,7 +346,7 @@ export function F1Dashboard() {
   }, [driverStandings, driverQuery]);
 
   const renderDriversPanel = (compact: boolean) => {
-    const list = compact ? driverStandings.slice(0, 8) : filteredDrivers;
+    const list = compact ? driverStandings.slice(0, 10) : filteredDrivers;
 
     return (
       <SurfacePanel
@@ -354,7 +354,7 @@ export function F1Dashboard() {
         title="Classificação de Pilotos"
         icon={<Users className="w-4 h-4 text-red-400" />}
         action={
-          compact && driverStandings.length > 8 ? (
+          compact && driverStandings.length > 10 ? (
             <button
               type="button"
               onClick={() => setActiveTab("drivers")}
@@ -368,7 +368,6 @@ export function F1Dashboard() {
             </span>
           )
         }
-        className={compact ? "h-full flex flex-col" : ""}
       >
         {!compact && (
           <div className="mb-4">
@@ -385,13 +384,7 @@ export function F1Dashboard() {
           </div>
         )}
 
-        <div
-          className={`space-y-2 ${
-            compact
-              ? "max-h-[460px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent"
-              : ""
-          }`}
-        >
+        <div className="space-y-2">
           {isLoadingDrivers ? (
             <div className="py-12 flex items-center justify-center">
               <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
@@ -475,7 +468,7 @@ export function F1Dashboard() {
 
   const renderConstructorsPanel = (compact: boolean) => {
     const list = compact
-      ? constructorStandings.slice(0, 10)
+      ? constructorStandings.slice(0, 11)
       : constructorStandings;
 
     return (
@@ -498,15 +491,8 @@ export function F1Dashboard() {
             </span>
           )
         }
-        className={compact ? "h-full flex flex-col" : ""}
       >
-        <div
-          className={`space-y-2 ${
-            compact
-              ? "max-h-[460px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent"
-              : ""
-          }`}
-        >
+        <div className="space-y-2">
           {isLoadingConstructors ? (
             <div className="py-12 flex items-center justify-center">
               <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
@@ -864,7 +850,7 @@ export function F1Dashboard() {
       {activeTab === "overview" && (
         <div className="flex flex-col gap-5">
           {/* Row 1: Schedule + Circuit | Drivers | Constructors */}
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
             <div className="xl:col-span-4 flex flex-col gap-5">
               <div className="flex-1 min-h-[280px]">
                 <F1Widget />
