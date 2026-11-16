@@ -1,9 +1,14 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, Film, Tv, Loader2, Check } from "lucide-react";
-import { radarApi } from "@/lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CalendarDays, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { SurfacePanel } from "@/components/ui/page-shell";
+import {
+  MediaPoster,
+  buildLmsMediaUrl,
+} from "@/components/media/media-poster";
+import { radarApi } from "@/lib/api";
 
 interface ReleaseRadarDTO {
   tmdbId: string;
@@ -22,11 +27,6 @@ interface WeeklyDay {
   dayLabel: string;
   releases: ReleaseRadarDTO[];
 }
-
-const targetUrlFor = (r: ReleaseRadarDTO) =>
-  r.type === "MOVIE"
-    ? `https://filmes.lucasmks.com.br/filmes/${r.tmdbId}`
-    : `https://filmes.lucasmks.com.br/series/${r.tmdbId}`;
 
 function ReleaseTile({ r }: { r: ReleaseRadarDTO }) {
   const queryClient = useQueryClient();
@@ -79,13 +79,15 @@ function ReleaseTile({ r }: { r: ReleaseRadarDTO }) {
     },
   });
 
-  const releaseDate = new Date(r.releaseDate + "T00:00:00");
+  const releaseDate = new Date((r.releaseDate || "") + "T00:00:00");
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const isReleased = releaseDate <= today;
+  const isReleased = !Number.isNaN(releaseDate.getTime()) && releaseDate <= today;
 
-  const isSeries = r.type === "SERIES" && r.seasonNumber != null && r.episodeNumber != null;
+  const isSeries =
+    r.type === "SERIES" && r.seasonNumber != null && r.episodeNumber != null;
   const isPending = watchMutation.isPending || unwatchMutation.isPending;
+  const targetUrl = buildLmsMediaUrl(r.type, r.tmdbId);
 
   const handleWatchToggle = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -106,61 +108,55 @@ function ReleaseTile({ r }: { r: ReleaseRadarDTO }) {
     }
   };
 
+  if (!targetUrl) return null;
+
   return (
     <a
-      href={targetUrlFor(r)}
+      href={targetUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="group flex flex-col gap-1.5 p-1.5 rounded-xl bg-black/40 border border-white/5 hover:border-sky-500/30 transition-all w-[88px] md:w-auto shrink-0 md:shrink relative"
+      className="group flex flex-col gap-1.5 p-1.5 rounded-xl bg-[#161619] border border-white/[0.06] hover:border-white/[0.14] transition-colors w-[88px] md:w-auto shrink-0 md:shrink relative"
     >
-      <div className="aspect-[2/3] w-full rounded-md overflow-hidden border border-white/5 relative">
-        {r.posterUrl ? (
-          <img
-            src={r.posterUrl}
-            alt={r.title}
-            loading="lazy"
-            className="w-full h-full object-cover transition-opacity opacity-85 group-hover:opacity-100"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-zinc-900">
-            {r.type === "MOVIE" ? (
-              <Film className="w-4 h-4 text-zinc-700" />
-            ) : (
-              <Tv className="w-4 h-4 text-zinc-700" />
-            )}
-          </div>
-        )}
+      <div className="aspect-[2/3] w-full rounded-lg overflow-hidden border border-white/[0.06] relative">
+        <MediaPoster
+          src={r.posterUrl}
+          alt={r.title}
+          type={r.type}
+          className="w-full h-full object-cover transition-opacity opacity-85 group-hover:opacity-100"
+          iconClassName="w-4 h-4 text-zinc-700"
+        />
 
-        {/* Overlay do botão de assistido */}
         {isSeries && isReleased && (
           <button
+            type="button"
             onClick={handleWatchToggle}
             disabled={isPending}
-            className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${
+            className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center transition-colors ${
               r.watched
-                ? "bg-emerald-600 text-white border border-emerald-500 shadow-md shadow-emerald-950/50"
-                : "bg-black/60 text-zinc-400 hover:text-white border border-white/10 hover:bg-sky-600/80 hover:border-sky-500 shadow-sm"
+                ? "bg-emerald-600 text-white border border-emerald-500"
+                : "bg-[#09090b]/85 text-zinc-400 hover:text-white border border-white/[0.12] hover:bg-zinc-800"
             }`}
-            title={r.watched ? "Marcar como não assistido" : "Marcar como assistido"}
+            title={
+              r.watched ? "Marcar como não assistido" : "Marcar como assistido"
+            }
           >
             {isPending ? (
               <Loader2 className="w-2.5 h-2.5 animate-spin" />
-            ) : r.watched ? (
-              <Check className="w-3 h-3 stroke-[3]" />
             ) : (
-              <Check className="w-3 h-3" />
+              <Check className={`w-3 h-3 ${r.watched ? "stroke-[3]" : ""}`} />
             )}
           </button>
         )}
       </div>
+
       <div className="flex flex-col min-w-0">
-        <span className="text-[10px] md:text-[11px] font-bold text-white truncate">
+        <span className="text-[11px] font-semibold text-white truncate">
           {r.title}
         </span>
         {r.type === "SERIES" &&
           r.seasonNumber != null &&
           r.episodeNumber != null && (
-            <span className="text-[9px] md:text-[10px] text-sky-400 font-mono">
+            <span className="text-[10px] text-sky-400 font-mono">
               S{String(r.seasonNumber).padStart(2, "0")}E
               {String(r.episodeNumber).padStart(2, "0")}
             </span>
@@ -171,51 +167,46 @@ function ReleaseTile({ r }: { r: ReleaseRadarDTO }) {
 }
 
 export function WeeklyEpisodeCalendar() {
-  const { data: days = [], isLoading } = useQuery<WeeklyDay[]>({
+  const { data: rawDays = [], isLoading } = useQuery<WeeklyDay[]>({
     queryKey: ["media-weekly-calendar"],
     queryFn: radarApi.getWeeklyCalendar,
     staleTime: 1000 * 60 * 15,
   });
 
+  const days = Array.isArray(rawDays) ? rawDays : [];
+
   return (
-    <div className="bg-[#121214]/80 backdrop-blur-xl border border-white/5 border-t-sky-500/50 rounded-3xl p-4 md:p-6 lg:p-8 shadow-2xl relative overflow-hidden">
-      <div className="absolute top-0 left-0 w-72 h-72 bg-sky-500/5 rounded-full blur-3xl pointer-events-none"></div>
-
-      <div className="flex items-center gap-2.5 md:gap-3 mb-4 md:mb-6 relative z-10">
-        <div className="p-1.5 md:p-2 bg-sky-500/10 rounded-xl border border-sky-500/20">
-          <CalendarDays className="text-sky-400 w-4 h-4 md:w-5 md:h-5" />
-        </div>
-        <div className="flex flex-col">
-          <h2 className="text-base md:text-xl font-bold text-white tracking-tight">
-            Semana a frente
-          </h2>
-          <span className="text-[10px] md:text-[11px] text-zinc-500 font-medium">
-            Episódios e estreias nos próximos 7 dias
-          </span>
-        </div>
-      </div>
-
+    <SurfacePanel
+      title="Semana a frente"
+      icon={<CalendarDays className="w-4 h-4 text-zinc-400" />}
+      action={
+        <span className="text-[11px] text-zinc-500">
+          Episódios e estreias nos próximos 7 dias
+        </span>
+      }
+    >
       {isLoading ? (
-        <div className="flex items-center justify-center py-12 relative z-10">
-          <Loader2 className="w-6 h-6 animate-spin text-sky-500/50" />
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 animate-spin text-zinc-500" />
         </div>
       ) : (
         <>
-          {/* MOBILE: dias empilhados verticalmente, releases scrolláveis horizontalmente */}
-          <div className="md:hidden flex flex-col gap-3 relative z-10">
+          {/* Mobile */}
+          <div className="md:hidden flex flex-col gap-3">
             {days.map((day, idx) => {
               const isToday = idx === 0;
+              const releases = Array.isArray(day.releases) ? day.releases : [];
               return (
                 <div
                   key={day.date}
-                  className={`p-3 rounded-2xl border ${
+                  className={`p-3 rounded-xl border ${
                     isToday
-                      ? "bg-sky-500/5 border-sky-500/30"
-                      : "bg-black/30 border-white/5"
+                      ? "bg-sky-500/[0.06] border-sky-500/25"
+                      : "bg-[#161619] border-white/[0.06]"
                   }`}
                 >
                   <div
-                    className={`text-[11px] font-bold uppercase tracking-widest mb-2 ${
+                    className={`text-[11px] font-semibold uppercase tracking-wider mb-2 ${
                       isToday ? "text-sky-400" : "text-zinc-400"
                     }`}
                   >
@@ -223,13 +214,13 @@ export function WeeklyEpisodeCalendar() {
                     {isToday && <span className="ml-2 text-sky-300">• Hoje</span>}
                   </div>
 
-                  {day.releases.length === 0 ? (
-                    <div className="py-3 text-zinc-600 text-xs">
+                  {releases.length === 0 ? (
+                    <div className="py-2 text-zinc-500 text-xs">
                       Sem estreias.
                     </div>
                   ) : (
                     <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                      {day.releases.map((r) => (
+                      {releases.map((r) => (
                         <ReleaseTile
                           key={`${r.type}-${r.tmdbId}-${day.date}`}
                           r={r}
@@ -242,36 +233,37 @@ export function WeeklyEpisodeCalendar() {
             })}
           </div>
 
-          {/* DESKTOP: grid 7 colunas */}
-          <div className="hidden md:grid grid-cols-7 gap-3 relative z-10">
+          {/* Desktop */}
+          <div className="hidden md:grid grid-cols-7 gap-3">
             {days.map((day, idx) => {
               const isToday = idx === 0;
+              const releases = Array.isArray(day.releases) ? day.releases : [];
               return (
                 <div
                   key={day.date}
-                  className={`flex flex-col gap-2 p-3 rounded-2xl border ${
+                  className={`flex flex-col gap-2 p-3 rounded-xl border ${
                     isToday
-                      ? "bg-sky-500/5 border-sky-500/30"
-                      : "bg-black/30 border-white/5"
+                      ? "bg-sky-500/[0.06] border-sky-500/25"
+                      : "bg-[#161619] border-white/[0.06]"
                   }`}
                 >
                   <div
-                    className={`text-[11px] font-bold uppercase tracking-widest text-center pb-2 border-b ${
+                    className={`text-[11px] font-semibold uppercase tracking-wider text-center pb-2 border-b ${
                       isToday
                         ? "text-sky-400 border-sky-500/20"
-                        : "text-zinc-500 border-white/5"
+                        : "text-zinc-400 border-white/[0.06]"
                     }`}
                   >
                     {day.dayLabel}
                   </div>
 
                   <div className="flex flex-col gap-2">
-                    {day.releases.length === 0 ? (
+                    {releases.length === 0 ? (
                       <div className="py-6 flex items-center justify-center">
-                        <span className="text-zinc-700 text-[10px]">—</span>
+                        <span className="text-zinc-600 text-xs">—</span>
                       </div>
                     ) : (
-                      day.releases.map((r) => (
+                      releases.map((r) => (
                         <ReleaseTile
                           key={`${r.type}-${r.tmdbId}-${day.date}`}
                           r={r}
@@ -285,6 +277,6 @@ export function WeeklyEpisodeCalendar() {
           </div>
         </>
       )}
-    </div>
+    </SurfacePanel>
   );
 }

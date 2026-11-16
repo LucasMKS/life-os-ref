@@ -1,7 +1,15 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Film, Tv, ArrowUpRight, Clock } from "lucide-react";
+import { ArrowUpRight, Clock } from "lucide-react";
+import { EmptyState, SurfacePanel } from "@/components/ui/page-shell";
+import {
+  LMS_BASE_URL,
+  MediaPoster,
+  buildLmsMediaUrl,
+  buildTmdbImageUrl,
+} from "@/components/media/media-poster";
+import { sanitizeUrl } from "@/lib/security";
 import {
   moviesApi,
   seriesApi,
@@ -14,9 +22,9 @@ type PreviewItem =
   | { kind: "movie"; data: TmdbMovie; addedAt: string }
   | { kind: "serie"; data: TmdbSerie; addedAt: string };
 
-const LMS_URL = "https://filmes.lucasmks.com.br";
-
 export function RecentWatchlistPreview() {
+  const safeLmsUrl = sanitizeUrl(LMS_BASE_URL);
+
   const { data: recent = [], isLoading } = useQuery<PreviewItem[]>({
     queryKey: ["media-recent-watchlist-preview"],
     queryFn: async () => {
@@ -25,11 +33,11 @@ export function RecentWatchlistPreview() {
         watchlistSeriesApi.getWatchlistSeries().catch(() => []),
       ]);
 
-      const latestMovies = [...(movies || [])]
+      const latestMovies = [...(Array.isArray(movies) ? movies : [])]
         .sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? ""))
         .slice(0, 2);
 
-      const latestSeries = [...(series || [])]
+      const latestSeries = [...(Array.isArray(series) ? series : [])]
         .sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? ""))
         .slice(0, 2);
 
@@ -64,67 +72,61 @@ export function RecentWatchlistPreview() {
       );
 
       return [...hydratedMovies, ...hydratedSeries].filter(
-        (x): x is PreviewItem => x != null,
+        (x): x is PreviewItem => x != null && x.data != null,
       );
     },
     staleTime: 1000 * 60 * 5,
   });
 
   return (
-    <div className="bg-[#121214]/80 backdrop-blur-xl border border-white/5 rounded-3xl p-4 md:p-5 shadow-xl relative flex-1 flex flex-col justify-between">
-      <div className="flex items-center justify-between mb-4 md:mb-5">
-        <div className="flex items-center gap-2.5">
-          <div className="p-1.5 bg-zinc-500/10 rounded-xl border border-white/10">
-            <Clock className="text-zinc-300 w-4 h-4" />
-          </div>
-          <div className="flex flex-col">
-            <h2 className="text-sm md:text-base font-bold text-white tracking-tight">
-              Últimos adicionados
-            </h2>
-            <span className="text-[10px] md:text-[11px] text-zinc-500 font-medium">
-              Atalho para continuar
-            </span>
-          </div>
-        </div>
-        <a
-          href={LMS_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1 text-[10px] md:text-xs font-bold text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full transition-colors border border-white/10"
-        >
-          Catálogo
-          <ArrowUpRight className="w-3 h-3 md:w-3.5 md:h-3.5" />
-        </a>
-      </div>
-
+    <SurfacePanel
+      title="Últimos adicionados"
+      icon={<Clock className="w-4 h-4 text-zinc-400" />}
+      action={
+        safeLmsUrl ? (
+          <a
+            href={safeLmsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs font-medium text-zinc-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] px-2.5 py-1 rounded-xl border border-white/[0.06] transition-colors"
+          >
+            <span>Catálogo</span>
+            <ArrowUpRight className="w-3.5 h-3.5" />
+          </a>
+        ) : null
+      }
+      className="flex-1 flex flex-col"
+    >
       {isLoading ? (
         <div className="grid grid-cols-2 gap-3">
           {[1, 2, 3, 4].map((i) => (
             <div
               key={i}
-              className="aspect-[2/3] bg-white/5 animate-pulse rounded-2xl"
+              className="aspect-[2/3] bg-white/[0.04] animate-pulse rounded-xl"
             />
           ))}
         </div>
       ) : recent.length === 0 ? (
-        <div className="p-6 bg-black/20 rounded-2xl border border-white/5 border-dashed text-center text-zinc-500 text-xs md:text-sm font-medium">
-          Watchlist vazia — adicione títulos no LMS Filmes.
-        </div>
+        <EmptyState
+          icon={<Clock className="w-5 h-5" />}
+          title="Watchlist vazia"
+          description="Adicione títulos no LMS Filmes para vê-los aqui."
+        />
       ) : (
         <div className="grid grid-cols-2 gap-3">
           {recent.map((item) => {
             const id = item.data.id;
             const title =
               item.kind === "movie"
-                ? (item.data as TmdbMovie).title
-                : (item.data as TmdbSerie).name;
-            const url =
-              item.kind === "movie"
-                ? `${LMS_URL}/filmes/${id}`
-                : `${LMS_URL}/series/${id}`;
-            const poster = item.data.poster_path
-              ? `https://image.tmdb.org/t/p/w500${item.data.poster_path}`
-              : null;
+                ? (item.data as TmdbMovie).title || "Sem título"
+                : (item.data as TmdbSerie).name || "Sem título";
+            const url = buildLmsMediaUrl(
+              item.kind === "movie" ? "MOVIE" : "SERIES",
+              id,
+            );
+            const poster = buildTmdbImageUrl(item.data.poster_path, "w500");
+
+            if (!url) return null;
 
             return (
               <a
@@ -132,39 +134,29 @@ export function RecentWatchlistPreview() {
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group relative aspect-[2/3] bg-black/40 rounded-2xl border border-white/5 overflow-hidden shadow-lg hover:-translate-y-1 hover:border-white/20 transition-all duration-300"
+                className="group relative aspect-[2/3] bg-[#161619] rounded-xl border border-white/[0.06] hover:border-white/[0.14] overflow-hidden transition-colors"
               >
-                {poster ? (
-                  <img
-                    src={poster}
-                    alt={title}
-                    loading="lazy"
-                    className="w-full h-full object-cover opacity-85 group-hover:opacity-100 transition-opacity"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-zinc-900">
-                    {item.kind === "movie" ? (
-                      <Film className="w-8 h-8 text-zinc-800" />
-                    ) : (
-                      <Tv className="w-8 h-8 text-zinc-800" />
-                    )}
-                  </div>
-                )}
+                <MediaPoster
+                  src={poster}
+                  alt={title}
+                  type={item.kind === "movie" ? "MOVIE" : "SERIES"}
+                  className="w-full h-full object-cover opacity-85 group-hover:opacity-100 transition-opacity"
+                />
 
                 <div className="absolute top-2 left-2">
                   <span
-                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border backdrop-blur-md ${
+                    className={`px-1.5 py-0.5 rounded-md text-[9px] font-semibold uppercase tracking-wider border ${
                       item.kind === "movie"
-                        ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
-                        : "bg-purple-500/20 text-purple-300 border-purple-500/30"
+                        ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/25"
+                        : "bg-sky-500/15 text-sky-300 border-sky-500/25"
                     }`}
                   >
                     {item.kind === "movie" ? "Filme" : "Série"}
                   </span>
                 </div>
 
-                <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/90 via-black/40 to-transparent">
-                  <h3 className="text-xs md:text-sm font-bold text-white line-clamp-2 leading-tight">
+                <div className="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-[#09090b] via-[#09090b]/60 to-transparent">
+                  <h3 className="text-xs font-semibold text-white line-clamp-2 leading-tight">
                     {title}
                   </h3>
                 </div>
@@ -173,6 +165,6 @@ export function RecentWatchlistPreview() {
           })}
         </div>
       )}
-    </div>
+    </SurfacePanel>
   );
 }

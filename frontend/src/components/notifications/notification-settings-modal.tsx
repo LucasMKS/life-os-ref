@@ -193,27 +193,23 @@ export function NotificationSettingsModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/80 backdrop-blur-md"
+        className="absolute inset-0 bg-black/80"
         onClick={onClose}
       />
 
       {/* Modal Dialog */}
-      <div className="relative w-full max-w-3xl bg-[#09090b] border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 z-10">
-        {/* Glow Superior */}
-        <div className="absolute top-0 right-1/4 w-80 h-36 bg-blue-600/15 rounded-full blur-[90px] pointer-events-none" />
-        <div className="absolute top-0 left-1/4 w-80 h-36 bg-indigo-600/10 rounded-full blur-[90px] pointer-events-none" />
-
+      <div className="relative w-full max-w-3xl bg-[#111113] border border-white/[0.08] rounded-2xl overflow-hidden flex flex-col max-h-[90vh] z-10">
         {/* Modal Header */}
-        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-white/10 relative z-10 bg-black/30 backdrop-blur-sm">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-white/[0.06] relative z-10 bg-[#0c0c0e]">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-2xl text-blue-400">
-              <Sliders size={20} />
+            <div className="p-2.5 bg-white/[0.04] border border-white/[0.06] rounded-xl text-zinc-300">
+              <Sliders size={18} />
             </div>
             <div>
-              <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
+              <h2 className="text-base sm:text-lg font-semibold text-white tracking-tight">
                 Configurações de Notificações
               </h2>
               <p className="text-xs text-zinc-400">
@@ -222,26 +218,27 @@ export function NotificationSettingsModal({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors shrink-0"
+            className="p-2 text-zinc-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-xl transition-colors shrink-0"
             title="Fechar (Esc)"
+            aria-label="Fechar modal"
           >
-            <X size={18} />
+            <X size={17} />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-7 relative z-10 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 relative z-10">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-20 gap-3 text-zinc-400">
-              <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+              <Loader2 className="w-6 h-6 animate-spin text-zinc-500" />
               <p className="text-sm">Carregando preferências...</p>
             </div>
           ) : (
             <>
               {/* SEÇÃO 1: CONEXÃO COM O TELEGRAM */}
-              <section className="bg-white/[0.02] border border-white/10 rounded-2xl p-4 sm:p-5 relative overflow-hidden space-y-4">
-                <div className="absolute top-0 right-0 w-48 h-32 bg-sky-500/5 rounded-full blur-3xl pointer-events-none" />
+              <section className="bg-[#09090b] border border-white/[0.06] rounded-2xl p-4 sm:p-5 space-y-4">
 
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-center gap-3">
@@ -717,11 +714,11 @@ export function NotificationSettingsModal({
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 sm:p-5 border-t border-white/10 bg-black/40 backdrop-blur-md flex items-center justify-end gap-3 relative z-10">
+        <div className="p-4 sm:p-5 border-t border-white/[0.06] bg-[#0c0c0e] flex items-center justify-end gap-2.5 relative z-10">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2.5 text-xs sm:text-sm font-semibold text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-all"
+            className="px-4 py-2 text-xs sm:text-sm font-medium bg-white/[0.05] text-zinc-200 border border-white/[0.08] hover:bg-white/[0.1] rounded-xl transition-colors"
           >
             Cancelar
           </button>
@@ -729,7 +726,7 @@ export function NotificationSettingsModal({
             type="button"
             onClick={() => updateMutation.mutate(formState)}
             disabled={updateMutation.isPending}
-            className="flex items-center gap-2 px-5 py-2.5 text-xs sm:text-sm font-bold text-white bg-blue-600 hover:bg-blue-500 active:bg-blue-700 rounded-xl shadow-lg shadow-blue-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-5 py-2 text-xs sm:text-sm font-semibold bg-zinc-100 text-zinc-950 hover:bg-white rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {updateMutation.isPending ? (
               <>

@@ -1,81 +1,75 @@
 "use client";
 
-import { BarChart2, Calendar, PlayCircle } from "lucide-react";
+import { useState } from "react";
+import { BarChart2, Calendar, LayoutGrid, PlayCircle } from "lucide-react";
+import { FilterPill } from "@/components/ui/page-shell";
 import { MediaStatsStrip } from "@/components/media/media-stats-strip";
 import { RecentWatchlistPreview } from "@/components/media/recent-watchlist-preview";
 import { EpisodeWatchlist } from "@/components/media/episode-watchlist";
 import { MediaStats } from "@/components/media/media-stats";
 import { UpcomingReleasesRadar } from "@/components/media/upcoming-releases-radar";
 
+type MediaSectionTab = "all" | "watching" | "radar" | "stats";
+
+const TABS: { id: MediaSectionTab; label: string; icon: React.ReactNode }[] = [
+  { id: "all", label: "Visão Geral", icon: <LayoutGrid className="w-3.5 h-3.5" /> },
+  { id: "watching", label: "Assistindo", icon: <PlayCircle className="w-3.5 h-3.5" /> },
+  { id: "radar", label: "Radar", icon: <Calendar className="w-3.5 h-3.5" /> },
+  { id: "stats", label: "Estatísticas", icon: <BarChart2 className="w-3.5 h-3.5" /> },
+];
+
 export function MediaDashboard() {
+  const [activeSection, setActiveSection] = useState<MediaSectionTab>("all");
+
+  const showWatching = activeSection === "all" || activeSection === "watching";
+  const showRadar = activeSection === "all" || activeSection === "radar";
+  const showStats = activeSection === "all" || activeSection === "stats";
+
   return (
-    <div className="w-full flex flex-col gap-8 md:gap-10">
-      {/* 1. FAIXA DE RESUMO RÁPIDO */}
+    <div className="w-full flex flex-col gap-6 md:gap-8">
+      {/* 1. Resumo Rápido */}
       <MediaStatsStrip />
 
-      {/* 2. PRÓXIMOS EPISÓDIOS PARA ASSISTIR */}
-      <section className="flex flex-col gap-4">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
-            <PlayCircle className="w-4 h-4" />
-          </div>
-          <div>
-            <h3 className="text-base md:text-lg font-bold text-white tracking-tight">
-              Continuar Assistindo
-            </h3>
-            <p className="text-xs text-zinc-400">
-              Episódios disponíveis das séries que você está acompanhando.
-            </p>
-          </div>
-        </div>
+      {/* Navegação por Seção */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+        {TABS.map((tab) => (
+          <FilterPill
+            key={tab.id}
+            accent="purple"
+            active={activeSection === tab.id}
+            onClick={() => setActiveSection(tab.id)}
+          >
+            {tab.icon}
+            <span>{tab.label}</span>
+          </FilterPill>
+        ))}
+      </div>
 
-        <EpisodeWatchlist />
-      </section>
+      {/* 2. Continuar Assistindo */}
+      {showWatching && (
+        <section className="flex flex-col gap-3">
+          <EpisodeWatchlist />
+        </section>
+      )}
 
-      {/* 3. RADAR DE ESTREIAS & ADICIONADOS RECENTES */}
-      <section className="flex flex-col gap-4">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
-            <Calendar className="w-4 h-4" />
-          </div>
-          <div>
-            <h3 className="text-base md:text-lg font-bold text-white tracking-tight">
-              Radar de Estreias & Recentes
-            </h3>
-            <p className="text-xs text-zinc-400">
-              Próximos episódios a ir ao ar e os títulos mais recentes da sua lista.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 md:gap-8 items-stretch">
+      {/* 3. Radar de Estreias & Recentes */}
+      {showRadar && (
+        <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 md:gap-6 items-stretch">
           <div className="lg:col-span-8 xl:col-span-9 flex flex-col">
             <UpcomingReleasesRadar />
           </div>
           <div className="lg:col-span-4 xl:col-span-3 flex flex-col">
             <RecentWatchlistPreview />
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
-      {/* 4. ESTATÍSTICAS E HÁBITOS */}
-      <section className="flex flex-col gap-4">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
-            <BarChart2 className="w-4 h-4" />
-          </div>
-          <div>
-            <h3 className="text-base md:text-lg font-bold text-white tracking-tight">
-              Estatísticas & Hábitos
-            </h3>
-            <p className="text-xs text-zinc-400">
-              Horas assistidas, gêneros favoritos e evolução do seu catálogo.
-            </p>
-          </div>
-        </div>
-
-        <MediaStats />
-      </section>
+      {/* 4. Estatísticas e Hábitos */}
+      {showStats && (
+        <section className="flex flex-col gap-4">
+          <MediaStats />
+        </section>
+      )}
     </div>
   );
 }

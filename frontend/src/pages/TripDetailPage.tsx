@@ -1,7 +1,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { TripDashboard } from "@/components/travel/TripDashboard";
-import { Navbar } from "@/components/navbar";
 import { BottomNav } from "@/components/bottom-nav";
+import { PageShell, EmptyState } from "@/components/ui/page-shell";
 import { ArrowLeft, Compass } from "lucide-react";
 
 export default function TripDetailPage() {
@@ -12,38 +12,37 @@ export default function TripDetailPage() {
 
   if (!tripId || isNaN(tripId)) {
     return (
-      <div className="min-h-screen bg-[#09090b] text-white">
-        <Navbar />
-        <main className="max-w-[1400px] mx-auto px-4 md:px-8 py-20 text-center">
-          <div className="w-12 h-12 rounded-2xl bg-sky-500/10 text-sky-400 flex items-center justify-center mx-auto mb-4 border border-sky-500/20">
-            <Compass size={24} />
+      <>
+        <PageShell maxWidth="7xl">
+          <div className="py-12">
+            <EmptyState
+              icon={<Compass size={26} className="text-sky-400" />}
+              title="Identificador de viagem inválido"
+              description="A URL informada não contém um ID numérico válido de viagem."
+              action={
+                <button
+                  type="button"
+                  onClick={() => router.push("/travel")}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-zinc-100 text-zinc-950 hover:bg-white font-semibold text-xs rounded-xl cursor-pointer transition-colors"
+                >
+                  <ArrowLeft size={14} />
+                  <span>Voltar para Minhas Viagens</span>
+                </button>
+              }
+            />
           </div>
-          <h2 className="text-xl font-bold">Identificador de viagem inválido</h2>
-          <p className="text-zinc-400 text-xs mt-2 mb-6">
-            A URL informada não contém um ID numérico válido de viagem.
-          </p>
-          <button
-            onClick={() => router.push("/travel")}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-sky-500 hover:bg-sky-400 text-black font-bold text-xs rounded-xl cursor-pointer transition-colors"
-          >
-            <ArrowLeft size={14} />
-            <span>Voltar para Minhas Viagens</span>
-          </button>
-        </main>
+        </PageShell>
         <BottomNav />
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-white">
-      <Navbar />
-
-      <main className="max-w-[1400px] mx-auto px-4 md:px-8 py-6 md:py-10">
+    <>
+      <PageShell maxWidth="7xl">
         <TripDashboard tripId={tripId} />
-      </main>
-
+      </PageShell>
       <BottomNav />
-    </div>
+    </>
   );
 }

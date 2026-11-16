@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   ShoppingBag,
   Plus,
@@ -22,6 +21,7 @@ import {
   Store,
 } from "lucide-react";
 import { ShoppingItem } from "@/lib/types";
+import { FilterPill, EmptyState } from "@/components/ui/page-shell";
 import { toast } from "sonner";
 
 interface TripShoppingTabProps {
@@ -30,7 +30,6 @@ interface TripShoppingTabProps {
 }
 
 export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps) {
-  // Navigation / active list filter
   const [activeCategory, setActiveCategory] = useState<string>("ALL");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<"ALL" | "PENDING" | "PURCHASED">("ALL");
@@ -52,7 +51,6 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
   const [editingItemName, setEditingItemName] = useState("");
   const [detailedModalItem, setDetailedModalItem] = useState<ShoppingItem | null>(null);
 
-  // Derive unique categories/lists from items
   const categories = useMemo(() => {
     const set = new Set<string>();
     items.forEach((i) => {
@@ -63,14 +61,12 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
     return Array.from(set);
   }, [items]);
 
-  // Determine current effective category for adding
   const effectiveAddCategory = useMemo(() => {
     if (quickCategory) return quickCategory;
     if (activeCategory !== "ALL") return activeCategory;
     return categories.length > 0 ? categories[0] : "Geral";
   }, [quickCategory, activeCategory, categories]);
 
-  // Stats
   const stats = useMemo(() => {
     const listItems =
       activeCategory === "ALL"
@@ -84,23 +80,26 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
 
     let totalCost = 0;
     listItems.forEach((i) => {
-      if (i.estimatedPrice) totalCost += i.estimatedPrice;
+      if (typeof i.estimatedPrice === "number" && !isNaN(i.estimatedPrice)) {
+        totalCost += i.estimatedPrice;
+      }
     });
 
     return { total, purchased, pending, percent, totalCost };
   }, [items, activeCategory]);
 
-  // Filtered items
   const filteredItems = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
     return items.filter((i) => {
       const itemCat = i.category?.trim() || "Geral";
       const matchesCategory =
         activeCategory === "ALL" || itemCat.toLowerCase() === activeCategory.toLowerCase();
 
       const matchesSearch =
-        i.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (i.storeOrLocation && i.storeOrLocation.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        itemCat.toLowerCase().includes(searchTerm.toLowerCase());
+        !q ||
+        (i.name || "").toLowerCase().includes(q) ||
+        (i.storeOrLocation || "").toLowerCase().includes(q) ||
+        itemCat.toLowerCase().includes(q);
 
       const matchesStatus =
         filterStatus === "ALL"
@@ -113,7 +112,6 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
     });
   }, [items, activeCategory, searchTerm, filterStatus]);
 
-  // Grouped items by category for the "ALL" view
   const groupedItems = useMemo(() => {
     const map = new Map<string, ShoppingItem[]>();
 
@@ -128,7 +126,6 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
     return Array.from(map.entries());
   }, [filteredItems]);
 
-  // Quick Add Item
   const handleQuickAdd = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const text = quickItemText.trim();
@@ -144,12 +141,9 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
 
     await onSaveShopping([...items, newItem]);
     setQuickItemText("");
-    if (quickInputRef.current) {
-      quickInputRef.current.focus();
-    }
+    quickInputRef.current?.focus();
   };
 
-  // Batch Add Items (split lines)
   const handleBatchAdd = async () => {
     const lines = batchText
       .split("\n")
@@ -176,7 +170,6 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
     toast.success(`${newItems.length} itens adicionados à lista "${targetCategory}"!`);
   };
 
-  // Toggle purchased
   const handleToggle = async (id: string) => {
     const updated = items.map((i) =>
       i.id === id ? { ...i, purchased: !i.purchased } : i
@@ -184,19 +177,16 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
     await onSaveShopping(updated);
   };
 
-  // Delete item
   const handleDelete = async (id: string) => {
     const updated = items.filter((i) => i.id !== id);
     await onSaveShopping(updated);
   };
 
-  // Start inline edit
   const handleStartEdit = (item: ShoppingItem) => {
     setEditingItemId(item.id);
-    setEditingItemName(item.name);
+    setEditingItemName(item.name || "");
   };
 
-  // Save inline edit
   const handleSaveEdit = async (id: string) => {
     const trimmed = editingItemName.trim();
     if (!trimmed) {
@@ -210,7 +200,6 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
     setEditingItemId(null);
   };
 
-  // Create new category/list
   const handleCreateCategory = (e: React.FormEvent) => {
     e.preventDefault();
     const name = newCategoryName.trim();
@@ -219,13 +208,10 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
     setQuickCategory(name);
     setNewCategoryName("");
     setIsCreatingCategory(false);
-    if (quickInputRef.current) {
-      quickInputRef.current.focus();
-    }
+    quickInputRef.current?.focus();
     toast.success(`Categoria "${name}" criada! Adicione os itens.`);
   };
 
-  // Bulk actions
   const handleMarkAllPurchased = async (purchased: boolean) => {
     const targetIds = new Set(filteredItems.map((i) => i.id));
     const updated = items.map((i) =>
@@ -250,13 +236,20 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
     toast.success("Itens comprados removidos!");
   };
 
-  // Detailed modal save
   const handleSaveDetailedModal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!detailedModalItem) return;
+    if (!detailedModalItem || !detailedModalItem.name.trim()) return;
+
+    const sanitizedItem: ShoppingItem = {
+      ...detailedModalItem,
+      name: detailedModalItem.name.trim(),
+      category: detailedModalItem.category?.trim() || undefined,
+      storeOrLocation: detailedModalItem.storeOrLocation?.trim() || undefined,
+      notes: detailedModalItem.notes?.trim() || undefined,
+    };
 
     const updated = items.map((i) =>
-      i.id === detailedModalItem.id ? detailedModalItem : i
+      i.id === sanitizedItem.id ? sanitizedItem : i
     );
     await onSaveShopping(updated);
     setDetailedModalItem(null);
@@ -264,83 +257,68 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-white/5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-white flex items-center gap-2.5">
-            <span className="p-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-              <ShoppingBag size={18} />
-            </span>
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <ShoppingBag className="text-zinc-400" size={18} />
             Lista de Compras
           </h2>
-          <p className="text-xs text-zinc-400 mt-1">
-            Organize compras, lembrancinhas, itens de mercado e despesas para sua viagem.
+          <p className="text-xs text-zinc-400 mt-0.5">
+            Organize compras, lembrancinhas, itens de mercado e despesas para a viagem.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              setBatchCategory(activeCategory !== "ALL" ? activeCategory : "Geral");
-              setIsBatchModalOpen(true);
-            }}
-            className="flex items-center gap-2 bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 font-semibold text-xs px-3.5 py-2 rounded-xl transition-all cursor-pointer shadow-sm"
-            title="Importar vários itens de uma vez"
-          >
-            <ClipboardList size={14} className="text-emerald-400" />
-            <span>Importar em Lote</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setBatchCategory(activeCategory !== "ALL" ? activeCategory : "Geral");
+            setIsBatchModalOpen(true);
+          }}
+          className="inline-flex items-center gap-2 bg-white/[0.05] hover:bg-white/[0.1] text-zinc-200 border border-white/[0.08] font-medium text-xs px-3.5 py-2 rounded-xl transition-colors cursor-pointer self-start sm:self-auto"
+          title="Importar vários itens de uma vez"
+        >
+          <ClipboardList size={14} className="text-zinc-400" />
+          <span>Importar em Lote</span>
+        </button>
       </div>
 
       {/* Category Pills Bar */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-zinc-800">
-        <button
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+        <FilterPill
+          active={activeCategory === "ALL"}
           onClick={() => {
             setActiveCategory("ALL");
             setQuickCategory("");
           }}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap cursor-pointer border ${
-            activeCategory === "ALL"
-              ? "bg-emerald-500 text-black border-emerald-400 font-bold shadow-sm"
-              : "bg-zinc-900/60 text-zinc-400 border-white/5 hover:text-white hover:bg-zinc-800"
-          }`}
         >
           <span>Todas</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/15 text-inherit font-mono">
-            {items.length}
-          </span>
-        </button>
+          <span className="text-[10px] opacity-70 font-mono">{items.length}</span>
+        </FilterPill>
 
         {categories.map((cat) => {
-          const catItems = items.filter((i) => (i.category || "Geral").toLowerCase() === cat.toLowerCase());
+          const catItems = items.filter(
+            (i) => (i.category || "Geral").toLowerCase() === cat.toLowerCase()
+          );
           const catCount = catItems.length;
           const catBought = catItems.filter((i) => i.purchased).length;
           const isActive = activeCategory.toLowerCase() === cat.toLowerCase();
 
           return (
-            <button
+            <FilterPill
               key={cat}
+              active={isActive}
               onClick={() => {
                 setActiveCategory(cat);
                 setQuickCategory(cat);
               }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap cursor-pointer border ${
-                isActive
-                  ? "bg-emerald-500 text-black border-emerald-400 font-bold shadow-sm"
-                  : "bg-zinc-900/60 text-zinc-400 border-white/5 hover:text-white hover:bg-zinc-800"
-              }`}
             >
               <span>{cat}</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                  isActive ? "bg-black/20 text-black" : "bg-white/10 text-zinc-300"
-                }`}
-              >
+              <span className="text-[10px] opacity-70 font-mono">
                 {catBought}/{catCount}
               </span>
-            </button>
+            </FilterPill>
           );
         })}
 
@@ -352,12 +330,12 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
               autoFocus
               value={newCategoryName}
               onChange={(e) => setNewCategoryName(e.target.value)}
-              placeholder="Nova lista/categoria..."
-              className="bg-zinc-900 border border-emerald-500/50 rounded-xl px-2.5 py-1 text-xs text-white placeholder-zinc-500 focus:outline-none w-44"
+              placeholder="Nova lista..."
+              className="bg-[#09090b] border border-white/25 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none w-40"
             />
             <button
               type="submit"
-              className="bg-emerald-500 text-black p-1.5 rounded-xl hover:bg-emerald-400 cursor-pointer"
+              className="bg-zinc-100 text-zinc-950 p-1.5 rounded-xl hover:bg-white cursor-pointer"
             >
               <Check size={13} />
             </button>
@@ -371,8 +349,9 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
           </form>
         ) : (
           <button
+            type="button"
             onClick={() => setIsCreatingCategory(true)}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border border-dashed border-white/15 transition-all whitespace-nowrap cursor-pointer shrink-0"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-white/[0.03] hover:bg-white/[0.08] text-zinc-400 hover:text-white border border-dashed border-white/[0.12] transition-colors whitespace-nowrap cursor-pointer shrink-0"
           >
             <Plus size={12} />
             <span>Nova Categoria</span>
@@ -381,9 +360,8 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
       </div>
 
       {/* Quick Add Bar */}
-      <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-3 sm:p-3.5 shadow-md">
+      <div className="rounded-xl border border-white/[0.06] bg-[#09090b] p-3 sm:p-3.5">
         <form onSubmit={handleQuickAdd} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          {/* Target List Selector */}
           <div className="relative shrink-0 sm:w-44">
             <select
               value={effectiveAddCategory}
@@ -393,7 +371,7 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
                   setActiveCategory(e.target.value);
                 }
               }}
-              className="w-full appearance-none bg-zinc-950 border border-white/10 rounded-xl px-3 py-2.5 text-xs font-semibold text-emerald-400 focus:outline-none focus:border-emerald-500 cursor-pointer"
+              className="w-full appearance-none bg-[#111113] border border-white/[0.08] rounded-xl px-3 py-2.5 text-xs font-medium text-zinc-200 focus:outline-none focus:border-white/25 cursor-pointer"
             >
               {categories.length === 0 ? (
                 <option value="Geral">Categoria: Geral</option>
@@ -410,102 +388,114 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
                 </option>
               )}
             </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+            <ChevronDown
+              size={14}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
+            />
           </div>
 
-          {/* Quick Input */}
           <div className="relative flex-1">
             <input
               ref={quickInputRef}
               type="text"
               value={quickItemText}
               onChange={(e) => setQuickItemText(e.target.value)}
-              placeholder={`Adicionar item em "${effectiveAddCategory}"... (ex: Protetor solar, Vinho regional, Lembrancinhas)`}
-              className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500 transition-colors"
+              placeholder={`Adicionar item em "${effectiveAddCategory}"...`}
+              className="w-full bg-[#111113] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 transition-colors"
             />
           </div>
 
           <button
             type="submit"
             disabled={!quickItemText.trim()}
-            className="flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed text-black font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer shrink-0 shadow-sm"
+            className="flex items-center justify-center gap-1.5 bg-zinc-100 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed text-zinc-950 font-semibold text-xs px-4 py-2.5 rounded-xl transition-colors cursor-pointer shrink-0"
           >
-            <Plus size={14} strokeWidth={2.5} />
+            <Plus size={14} strokeWidth={2.2} />
             <span>Adicionar</span>
           </button>
         </form>
 
-        <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5 text-[11px] text-zinc-500 px-1">
+        <div className="flex flex-wrap items-center justify-between gap-2 mt-2.5 pt-2.5 border-t border-white/[0.06] text-[11px] text-zinc-500 px-0.5">
           <span className="flex items-center gap-1.5">
-            <Sparkles size={11} className="text-emerald-400 shrink-0" />
-            <span>Pressione <kbd className="bg-white/10 px-1 py-0.5 rounded text-zinc-300 font-mono text-[10px]">Enter</kbd> para salvar e continuar adicionando.</span>
+            <Sparkles size={11} className="text-zinc-400 shrink-0" />
+            <span>
+              Pressione{" "}
+              <kbd className="bg-white/[0.08] px-1 py-0.5 rounded text-zinc-300 font-mono text-[10px]">
+                Enter
+              </kbd>{" "}
+              para salvar e continuar adicionando.
+            </span>
           </span>
           {stats.totalCost > 0 && (
-            <span className="font-mono text-zinc-400 font-semibold">
-              Total estimado: <span className="text-emerald-400">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(stats.totalCost)}</span>
+            <span className="font-mono text-zinc-400 font-medium">
+              Total estimado:{" "}
+              <span className="text-emerald-400">
+                {new Intl.NumberFormat("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                }).format(stats.totalCost)}
+              </span>
             </span>
           )}
         </div>
       </div>
 
       {/* Overview, Filters and Bulk Actions Toolbar */}
-      <div className="rounded-2xl border border-white/5 bg-zinc-900/30 p-3.5 space-y-3">
-        {/* Progress & Quick Stats */}
+      <div className="rounded-xl border border-white/[0.06] bg-[#09090b] p-3.5 space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex-1 max-w-md">
             <div className="flex items-center justify-between text-xs mb-1.5">
               <span className="font-medium text-zinc-400">
                 {activeCategory === "ALL" ? "Progresso Geral" : `Progresso em ${activeCategory}`}
               </span>
-              <span className="font-mono font-bold text-emerald-400">
+              <span className="font-mono font-semibold text-zinc-200">
                 {stats.purchased}/{stats.total} ({stats.percent}%)
               </span>
             </div>
-            <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
+            <div className="w-full bg-white/[0.08] rounded-full h-1.5 overflow-hidden">
               <div
-                className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                className="bg-emerald-400 h-full rounded-full transition-all duration-300"
                 style={{ width: `${stats.percent}%` }}
               />
             </div>
           </div>
 
-          {/* Bulk actions */}
           <div className="flex items-center gap-1.5 flex-wrap">
             <button
+              type="button"
               onClick={() => handleMarkAllPurchased(true)}
               disabled={stats.pending === 0}
-              className="flex items-center gap-1 text-[11px] px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white disabled:opacity-40 cursor-pointer transition-colors"
-              title="Marcar todos como comprados"
+              className="flex items-center gap-1 text-[11px] px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] disabled:opacity-40 cursor-pointer transition-colors"
             >
               <CheckCheck size={12} className="text-emerald-400" />
               <span>Marcar todos</span>
             </button>
 
             <button
+              type="button"
               onClick={() => handleMarkAllPurchased(false)}
               disabled={stats.purchased === 0}
-              className="flex items-center gap-1 text-[11px] px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white disabled:opacity-40 cursor-pointer transition-colors"
-              title="Desmarcar todos"
+              className="flex items-center gap-1 text-[11px] px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] disabled:opacity-40 cursor-pointer transition-colors"
             >
               <RotateCcw size={12} />
-              <span>Desmarcar todos</span>
+              <span>Desmarcar</span>
             </button>
 
             {stats.purchased > 0 && (
               <button
+                type="button"
                 onClick={handleClearPurchased}
-                className="flex items-center gap-1 text-[11px] px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 cursor-pointer transition-colors"
-                title="Remover itens comprados"
+                className="flex items-center gap-1 text-[11px] px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/15 text-red-400 border border-red-500/20 cursor-pointer transition-colors"
               >
                 <Trash2 size={12} />
-                <span>Limpar comprados ({stats.purchased})</span>
+                <span>Limpar ({stats.purchased})</span>
               </button>
             )}
           </div>
         </div>
 
         {/* Search & Status Filters */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-2 border-t border-white/5">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-2.5 border-t border-white/[0.06]">
           <div className="relative flex-1 max-w-sm">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
             <input
@@ -513,61 +503,43 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
               placeholder="Buscar item, categoria ou loja..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-zinc-950/80 border border-white/5 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500 transition-colors"
+              className="w-full bg-[#111113] border border-white/[0.06] rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 transition-colors"
             />
           </div>
 
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setFilterStatus("ALL")}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                filterStatus === "ALL"
-                  ? "bg-zinc-800 text-white font-bold"
-                  : "bg-white/5 text-zinc-400 hover:text-white"
-              }`}
-            >
+          <div className="flex items-center gap-1.5 overflow-x-auto">
+            <FilterPill active={filterStatus === "ALL"} onClick={() => setFilterStatus("ALL")}>
               Todos ({stats.total})
-            </button>
-            <button
+            </FilterPill>
+            <FilterPill
+              active={filterStatus === "PENDING"}
               onClick={() => setFilterStatus("PENDING")}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                filterStatus === "PENDING"
-                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
-                  : "bg-white/5 text-zinc-400 hover:text-white"
-              }`}
             >
               A Comprar ({stats.pending})
-            </button>
-            <button
+            </FilterPill>
+            <FilterPill
+              active={filterStatus === "PURCHASED"}
               onClick={() => setFilterStatus("PURCHASED")}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                filterStatus === "PURCHASED"
-                  ? "bg-zinc-700/50 text-zinc-200 border border-zinc-600/30 font-bold"
-                  : "bg-white/5 text-zinc-400 hover:text-white"
-              }`}
             >
               Comprados ({stats.purchased})
-            </button>
+            </FilterPill>
           </div>
         </div>
       </div>
 
       {/* Shopping Checklist Items */}
       {filteredItems.length === 0 ? (
-        <div className="text-center py-16 px-4 bg-zinc-900/20 rounded-3xl border border-dashed border-white/10 max-w-md mx-auto">
-          <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center mx-auto mb-3 text-zinc-500">
-            <ShoppingBag size={20} />
-          </div>
-          <h4 className="text-sm font-bold text-zinc-300">Nenhum item encontrado</h4>
-          <p className="text-zinc-500 text-xs mt-1">
-            {items.length === 0
+        <EmptyState
+          icon={<ShoppingBag size={24} />}
+          title="Nenhum item encontrado"
+          description={
+            items.length === 0
               ? "Adicione itens na barra acima ou use 'Importar em Lote' para colar sua lista."
-              : "Nenhum item corresponde à busca ou filtros atuais."}
-          </p>
-        </div>
+              : "Nenhum item corresponde à busca ou filtros atuais."
+          }
+        />
       ) : activeCategory !== "ALL" ? (
-        /* Single Active Category View */
-        <div className="bg-zinc-900/30 border border-white/5 rounded-2xl overflow-hidden divide-y divide-white/5">
+        <div className="bg-[#09090b] border border-white/[0.06] rounded-2xl overflow-hidden divide-y divide-white/[0.05]">
           {filteredItems.map((item) => (
             <ShoppingListItemRow
               key={item.id}
@@ -586,8 +558,7 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
           ))}
         </div>
       ) : (
-        /* Grouped By Category View */
-        <div className="space-y-4">
+        <div className="space-y-3.5">
           {groupedItems.map(([groupName, groupItems]) => {
             const groupBought = groupItems.filter((i) => i.purchased).length;
             const groupTotal = groupItems.length;
@@ -595,33 +566,32 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
             return (
               <div
                 key={groupName}
-                className="bg-zinc-900/20 border border-white/5 rounded-2xl overflow-hidden"
+                className="bg-[#09090b] border border-white/[0.06] rounded-2xl overflow-hidden"
               >
-                {/* Group Header */}
-                <div className="flex items-center justify-between px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
+                <div className="flex items-center justify-between px-4 py-2.5 bg-[#111113] border-b border-white/[0.06]">
                   <div className="flex items-center gap-2">
-                    <Tag size={13} className="text-emerald-400" />
-                    <h3 className="text-xs font-bold text-white tracking-wide uppercase">
+                    <Tag size={13} className="text-zinc-400" />
+                    <h3 className="text-xs font-semibold text-white tracking-wide uppercase">
                       {groupName}
                     </h3>
-                    <span className="text-[10px] font-mono text-zinc-400 bg-white/5 px-2 py-0.5 rounded border border-white/5">
+                    <span className="text-[10px] font-mono text-zinc-400 bg-white/[0.05] px-2 py-0.5 rounded border border-white/[0.06]">
                       {groupBought}/{groupTotal}
                     </span>
                   </div>
 
                   <button
+                    type="button"
                     onClick={() => {
                       setActiveCategory(groupName);
                       setQuickCategory(groupName);
                     }}
-                    className="text-[11px] font-medium text-emerald-400 hover:text-emerald-300 cursor-pointer"
+                    className="text-[11px] font-medium text-zinc-400 hover:text-white cursor-pointer"
                   >
-                    Ver somente esta lista
+                    Filtrar lista
                   </button>
                 </div>
 
-                {/* Group Items */}
-                <div className="divide-y divide-white/5">
+                <div className="divide-y divide-white/[0.05]">
                   {groupItems.map((item) => (
                     <ShoppingListItemRow
                       key={item.id}
@@ -645,256 +615,239 @@ export function TripShoppingTab({ items, onSaveShopping }: TripShoppingTabProps)
         </div>
       )}
 
-      {/* ========================================================
-         MODAL: IMPORTAR ITENS EM LOTE
-         ======================================================== */}
-      <AnimatePresence>
-        {isBatchModalOpen && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsBatchModalOpen(false)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative w-full max-w-lg bg-[#0c0c12] border border-white/10 rounded-3xl p-6 shadow-2xl z-10 space-y-4"
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-white/5">
-                <div className="flex items-center gap-2">
-                  <ClipboardList className="text-emerald-400" size={18} />
-                  <h3 className="text-base font-bold text-white">
-                    Importar Itens em Lote
-                  </h3>
-                </div>
-                <button
-                  onClick={() => setIsBatchModalOpen(false)}
-                  className="text-zinc-500 hover:text-white p-1 cursor-pointer"
-                >
-                  <X size={18} />
-                </button>
+      {/* MODAL: IMPORTAR ITENS EM LOTE */}
+      {isBatchModalOpen && (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            onClick={() => setIsBatchModalOpen(false)}
+            className="absolute inset-0 bg-black/80"
+          />
+          <div className="relative w-full max-w-lg bg-[#111113] border border-white/[0.08] rounded-2xl p-5 sm:p-6 shadow-2xl z-10 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="text-zinc-400" size={18} />
+                <h3 className="text-base font-bold text-white">Importar Itens em Lote</h3>
               </div>
+              <button
+                type="button"
+                onClick={() => setIsBatchModalOpen(false)}
+                className="text-zinc-500 hover:text-white p-1 rounded-lg hover:bg-white/[0.06] cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
 
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Cole vários itens de uma vez (um por linha). Eles serão adicionados automaticamente à categoria selecionada.
-              </p>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Cole vários itens de uma vez (um por linha). Eles serão adicionados automaticamente à categoria selecionada.
+            </p>
 
+            <div>
+              <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                Nome da Categoria / Lista
+              </label>
+              <input
+                type="text"
+                value={batchCategory}
+                onChange={(e) => setBatchCategory(e.target.value)}
+                placeholder="Ex: Farmácia, Supermercado, Lembranças..."
+                className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/25"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                Itens (um por linha)
+              </label>
+              <textarea
+                rows={8}
+                value={batchText}
+                onChange={(e) => setBatchText(e.target.value)}
+                placeholder={`Protetor solar FPS 50\nAdaptador de tomada internacional\nGarrafas de água mineral`}
+                className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl p-3 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-white/25 font-mono leading-relaxed resize-y"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/[0.06]">
+              <button
+                type="button"
+                onClick={() => setIsBatchModalOpen(false)}
+                className="px-4 py-2 text-xs font-medium text-zinc-200 bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.1] rounded-xl cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleBatchAdd}
+                className="flex items-center gap-1.5 bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-xs px-5 py-2 rounded-xl transition-colors cursor-pointer"
+              >
+                <Plus size={14} />
+                <span>Adicionar Itens</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DETALHES DO ITEM */}
+      {detailedModalItem && (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            onClick={() => setDetailedModalItem(null)}
+            className="absolute inset-0 bg-black/80"
+          />
+          <div className="relative w-full max-w-md bg-[#111113] border border-white/[0.08] rounded-2xl p-5 sm:p-6 shadow-2xl z-10 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Edit3 className="text-zinc-400" size={16} />
+                Detalhes do Item
+              </h3>
+              <button
+                type="button"
+                onClick={() => setDetailedModalItem(null)}
+                className="text-zinc-500 hover:text-white p-1 rounded-lg hover:bg-white/[0.06] cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveDetailedModal} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                  Nome da Categoria / Lista:
+                <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                  Nome do Item *
                 </label>
                 <input
                   type="text"
-                  value={batchCategory}
-                  onChange={(e) => setBatchCategory(e.target.value)}
-                  placeholder="Ex: Farmácia, Supermercado, Lembranças..."
-                  className="w-full bg-zinc-900 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500"
+                  required
+                  value={detailedModalItem.name}
+                  onChange={(e) =>
+                    setDetailedModalItem({ ...detailedModalItem, name: e.target.value })
+                  }
+                  className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/25"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                  Itens (um por linha):
+                <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                  Categoria / Lista
                 </label>
-                <textarea
-                  rows={8}
-                  value={batchText}
-                  onChange={(e) => setBatchText(e.target.value)}
-                  placeholder={`Protetor solar FPS 50\nAdaptador de tomada internacional\nGarrafas de água mineral\nSnacks para viagem`}
-                  className="w-full bg-zinc-950 border border-white/10 rounded-xl p-3 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-emerald-500 font-mono leading-relaxed resize-y"
+                <input
+                  type="text"
+                  value={detailedModalItem.category || ""}
+                  onChange={(e) =>
+                    setDetailedModalItem({ ...detailedModalItem, category: e.target.value })
+                  }
+                  placeholder="Ex: Supermercado, Farmácia..."
+                  className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/25"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/5">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                    Preço Estimado
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={detailedModalItem.estimatedPrice ?? ""}
+                    onChange={(e) =>
+                      setDetailedModalItem({
+                        ...detailedModalItem,
+                        estimatedPrice: e.target.value ? parseFloat(e.target.value) : undefined,
+                      })
+                    }
+                    placeholder="0,00"
+                    className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/25"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                    Moeda
+                  </label>
+                  <select
+                    value={detailedModalItem.currency || "BRL"}
+                    onChange={(e) =>
+                      setDetailedModalItem({ ...detailedModalItem, currency: e.target.value })
+                    }
+                    className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/25"
+                  >
+                    <option value="BRL">R$ (BRL)</option>
+                    <option value="USD">$ (USD)</option>
+                    <option value="EUR">€ (EUR)</option>
+                    <option value="GBP">£ (GBP)</option>
+                    <option value="JPY">¥ (JPY)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                  Loja / Estabelecimento
+                </label>
+                <input
+                  type="text"
+                  value={detailedModalItem.storeOrLocation || ""}
+                  onChange={(e) =>
+                    setDetailedModalItem({
+                      ...detailedModalItem,
+                      storeOrLocation: e.target.value,
+                    })
+                  }
+                  placeholder="Ex: Supermercado Local, Farmácia Central..."
+                  className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-white/25"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                  Observações
+                </label>
+                <textarea
+                  rows={2}
+                  value={detailedModalItem.notes || ""}
+                  onChange={(e) =>
+                    setDetailedModalItem({
+                      ...detailedModalItem,
+                      notes: e.target.value,
+                    })
+                  }
+                  placeholder="Marca, tamanho, sabor ou recomendações..."
+                  className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-white/25"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/[0.06]">
                 <button
                   type="button"
-                  onClick={() => setIsBatchModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-white bg-white/5 rounded-xl cursor-pointer"
+                  onClick={() => setDetailedModalItem(null)}
+                  className="px-4 py-2 text-xs font-medium text-zinc-200 bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.1] rounded-xl cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
-                  type="button"
-                  onClick={handleBatchAdd}
-                  className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs px-5 py-2 rounded-xl transition-all cursor-pointer shadow-md shadow-emerald-500/20"
+                  type="submit"
+                  className="bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-xs px-5 py-2 rounded-xl transition-colors cursor-pointer"
                 >
-                  <Plus size={15} />
-                  <span>Adicionar Itens</span>
+                  Salvar
                 </button>
               </div>
-            </motion.div>
+            </form>
           </div>
-        )}
-      </AnimatePresence>
-
-      {/* ========================================================
-         MODAL: DETALHES DO ITEM (PREÇO, LOJA, NOTAS)
-         ======================================================== */}
-      <AnimatePresence>
-        {detailedModalItem && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setDetailedModalItem(null)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative w-full max-w-md bg-[#0c0c12] border border-white/10 rounded-3xl p-6 shadow-2xl z-10 space-y-4"
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-white/5">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Edit3 className="text-emerald-400" size={17} />
-                  Detalhes do Item
-                </h3>
-                <button
-                  onClick={() => setDetailedModalItem(null)}
-                  className="text-zinc-500 hover:text-white p-1 cursor-pointer"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <form onSubmit={handleSaveDetailedModal} className="space-y-3.5">
-                <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                    Nome do Item *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={detailedModalItem.name}
-                    onChange={(e) =>
-                      setDetailedModalItem({ ...detailedModalItem, name: e.target.value })
-                    }
-                    className="w-full bg-zinc-900 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                    Categoria / Lista
-                  </label>
-                  <input
-                    type="text"
-                    value={detailedModalItem.category || ""}
-                    onChange={(e) =>
-                      setDetailedModalItem({ ...detailedModalItem, category: e.target.value })
-                    }
-                    placeholder="Ex: Supermercado, Farmácia..."
-                    className="w-full bg-zinc-900 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                      Preço Estimado
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={detailedModalItem.estimatedPrice || ""}
-                      onChange={(e) =>
-                        setDetailedModalItem({
-                          ...detailedModalItem,
-                          estimatedPrice: e.target.value ? parseFloat(e.target.value) : undefined,
-                        })
-                      }
-                      placeholder="0,00"
-                      className="w-full bg-zinc-900 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                      Moeda
-                    </label>
-                    <select
-                      value={detailedModalItem.currency || "BRL"}
-                      onChange={(e) =>
-                        setDetailedModalItem({ ...detailedModalItem, currency: e.target.value })
-                      }
-                      className="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                    >
-                      <option value="BRL">R$ (BRL)</option>
-                      <option value="USD">$ (USD)</option>
-                      <option value="EUR">€ (EUR)</option>
-                      <option value="GBP">£ (GBP)</option>
-                      <option value="JPY">¥ (JPY)</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                    Loja / Estabelecimento / Local
-                  </label>
-                  <input
-                    type="text"
-                    value={detailedModalItem.storeOrLocation || ""}
-                    onChange={(e) =>
-                      setDetailedModalItem({
-                        ...detailedModalItem,
-                        storeOrLocation: e.target.value,
-                      })
-                    }
-                    placeholder="Ex: Supermercado Local, Farmácia Central..."
-                    className="w-full bg-zinc-900 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                    Observações
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={detailedModalItem.notes || ""}
-                    onChange={(e) =>
-                      setDetailedModalItem({
-                        ...detailedModalItem,
-                        notes: e.target.value,
-                      })
-                    }
-                    placeholder="Marca, tamanho, sabor ou recomendações..."
-                    className="w-full bg-zinc-900 border border-white/10 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/5">
-                  <button
-                    type="button"
-                    onClick={() => setDetailedModalItem(null)}
-                    className="px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-white bg-white/5 rounded-xl cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs px-5 py-2 rounded-xl transition-all cursor-pointer shadow-md shadow-emerald-500/20"
-                  >
-                    Salvar
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }
 
-// Sub-component: Shopping List Row with Checklist UX
 interface ShoppingListItemRowProps {
   item: ShoppingItem;
   showCategory?: boolean;
@@ -925,27 +878,19 @@ function ShoppingListItemRow({
   return (
     <div
       className={`group flex items-center justify-between gap-3 px-3.5 py-2.5 transition-colors ${
-        item.purchased
-          ? "bg-zinc-950/40 text-zinc-500"
-          : "hover:bg-white/[0.02] text-zinc-200"
+        item.purchased ? "bg-[#09090b] text-zinc-500" : "hover:bg-white/[0.02] text-zinc-200"
       }`}
     >
-      {/* Left side: Checkbox + Name + Details */}
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <button
+          type="button"
           onClick={onToggle}
-          className={`shrink-0 cursor-pointer transition-transform active:scale-90 ${
-            item.purchased
-              ? "text-emerald-400"
-              : "text-zinc-600 hover:text-emerald-400"
+          className={`shrink-0 cursor-pointer transition-colors ${
+            item.purchased ? "text-emerald-400" : "text-zinc-600 hover:text-zinc-300"
           }`}
           title={item.purchased ? "Marcar como pendente" : "Marcar como comprado"}
         >
-          {item.purchased ? (
-            <CheckCircle2 size={18} className="fill-emerald-500/20" />
-          ) : (
-            <Circle size={18} />
-          )}
+          {item.purchased ? <CheckCircle2 size={18} /> : <Circle size={18} />}
         </button>
 
         {isEditing ? (
@@ -959,15 +904,17 @@ function ShoppingListItemRow({
                 if (e.key === "Enter") onSaveEdit();
                 if (e.key === "Escape") onCancelEdit();
               }}
-              className="bg-zinc-950 border border-emerald-500 rounded-lg px-2 py-1 text-xs text-white focus:outline-none w-full"
+              className="bg-[#111113] border border-white/25 rounded-lg px-2 py-1 text-xs text-white focus:outline-none w-full"
             />
             <button
+              type="button"
               onClick={onSaveEdit}
-              className="bg-emerald-500 text-black p-1 rounded-lg hover:bg-emerald-400 cursor-pointer"
+              className="bg-zinc-100 text-zinc-950 p-1 rounded-lg hover:bg-white cursor-pointer"
             >
               <Check size={12} />
             </button>
             <button
+              type="button"
               onClick={onCancelEdit}
               className="text-zinc-500 hover:text-white p-1 cursor-pointer"
             >
@@ -978,23 +925,21 @@ function ShoppingListItemRow({
           <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
             <span
               onClick={onToggle}
-              className={`text-xs sm:text-sm font-medium cursor-pointer select-none transition-all ${
-                item.purchased
-                  ? "line-through text-zinc-500"
-                  : "text-zinc-200 hover:text-emerald-300"
+              className={`text-xs sm:text-sm font-medium cursor-pointer select-none transition-colors ${
+                item.purchased ? "line-through text-zinc-500" : "text-zinc-200 hover:text-white"
               }`}
             >
               {item.name}
             </span>
 
             {showCategory && item.category && item.category !== "Geral" && (
-              <span className="text-[10px] font-medium text-zinc-400 bg-white/5 border border-white/5 px-2 py-0.2 rounded shrink-0">
+              <span className="text-[10px] font-medium text-zinc-400 bg-white/[0.04] border border-white/[0.06] px-2 py-0.5 rounded shrink-0">
                 {item.category}
               </span>
             )}
 
             {item.estimatedPrice !== undefined && item.estimatedPrice > 0 && (
-              <span className="text-[10px] font-mono font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20 shrink-0">
+              <span className="text-[10px] font-mono font-medium text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 shrink-0">
                 {new Intl.NumberFormat("pt-BR", {
                   style: "currency",
                   currency: item.currency || "BRL",
@@ -1003,8 +948,8 @@ function ShoppingListItemRow({
             )}
 
             {item.storeOrLocation && (
-              <span className="text-[10px] text-zinc-400 flex items-center gap-1 bg-white/5 px-1.5 py-0.2 rounded shrink-0">
-                <Store size={10} className="text-emerald-400" />
+              <span className="text-[10px] text-zinc-400 flex items-center gap-1 bg-white/[0.04] px-1.5 py-0.5 rounded shrink-0">
+                <Store size={10} className="text-zinc-400" />
                 {item.storeOrLocation}
               </span>
             )}
@@ -1012,17 +957,18 @@ function ShoppingListItemRow({
         )}
       </div>
 
-      {/* Right side actions */}
-      <div className="flex items-center gap-1 shrink-0 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+      <div className="flex items-center gap-1 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
         <button
+          type="button"
           onClick={onStartEdit}
-          className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+          className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/[0.08] rounded-lg transition-colors cursor-pointer"
           title="Editar nome"
         >
           <Edit3 size={13} />
         </button>
 
         <button
+          type="button"
           onClick={onOpenDetails}
           className="p-1.5 text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors cursor-pointer"
           title="Editar detalhes (preço, local, notas)"
@@ -1031,6 +977,7 @@ function ShoppingListItemRow({
         </button>
 
         <button
+          type="button"
           onClick={onDelete}
           className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
           title="Excluir item"

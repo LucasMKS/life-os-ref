@@ -1,18 +1,41 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { Suspense, lazy, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Calendar, Film, Tv, Loader2, Info, CalendarDays, ExternalLink } from "lucide-react";
-import { radarApi } from "@/lib/api";
-import { getDaysUntil, formatDateToDDMM, groupAndFilterRadarReleases } from "@/lib/date-utils";
 import {
-  ReleaseScheduleModal,
+  Calendar,
+  CalendarDays,
+  ExternalLink,
+  Film,
+  Info,
+  Loader2,
+  Tv,
+} from "lucide-react";
+import { EmptyState, SurfacePanel } from "@/components/ui/page-shell";
+import {
+  MediaPoster,
+  buildLmsMediaUrl,
+} from "@/components/media/media-poster";
+import { radarApi } from "@/lib/api";
+import {
+  formatDateToDDMM,
+  getDaysUntil,
+  groupAndFilterRadarReleases,
+} from "@/lib/date-utils";
+import type {
   GroupedRadarRelease,
   ReleaseRadarDTO,
 } from "@/components/media/release-schedule-modal";
 
+const ReleaseScheduleModal = lazy(() =>
+  import("@/components/media/release-schedule-modal").then((m) => ({
+    default: m.ReleaseScheduleModal,
+  })),
+);
+
 export function MediaHeroRadar() {
-  const [selectedItem, setSelectedItem] = useState<GroupedRadarRelease | null>(null);
+  const [selectedItem, setSelectedItem] =
+    useState<GroupedRadarRelease | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const { data: releases = [], isLoading } = useQuery<ReleaseRadarDTO[]>({
@@ -23,12 +46,13 @@ export function MediaHeroRadar() {
   });
 
   const groupedReleases = useMemo(() => {
-    const list = groupAndFilterRadarReleases(releases);
+    const safeReleases = Array.isArray(releases) ? releases : [];
+    const list = groupAndFilterRadarReleases(safeReleases);
     return list.sort((a, b) => {
       const isTodayA = getDaysUntil(a.nextReleaseDate) === "ESTREIA HOJE!";
       const isTodayB = getDaysUntil(b.nextReleaseDate) === "ESTREIA HOJE!";
       if (isTodayA !== isTodayB) return isTodayA ? -1 : 1;
-      return a.nextReleaseDate.localeCompare(b.nextReleaseDate);
+      return (a.nextReleaseDate ?? "").localeCompare(b.nextReleaseDate ?? "");
     });
   }, [releases]);
 
@@ -39,148 +63,142 @@ export function MediaHeroRadar() {
 
   return (
     <>
-      <div className="bg-[#121214]/80 backdrop-blur-xl border border-white/5 border-t-purple-500/50 rounded-3xl p-5 md:p-6 lg:p-8 shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-72 h-72 md:w-96 md:h-96 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-purple-600/15 via-purple-600/5 to-transparent pointer-events-none opacity-70"></div>
-
-        <div className="flex items-center justify-between mb-5 md:mb-6 relative z-10">
-          <div className="flex items-center gap-2.5 md:gap-3">
-            <div className="p-1.5 md:p-2 bg-purple-500/10 rounded-xl border border-purple-500/20">
-              <Calendar className="text-purple-400 w-4 h-4 md:w-5 md:h-5" />
-            </div>
-            <div className="flex flex-col">
-              <h2 className="text-lg md:text-xl font-bold text-white tracking-tight">
-                Radar de Lançamentos
-              </h2>
-              <span className="text-[10px] md:text-[11px] text-zinc-500 font-medium">
-                O que está por vir na sua watchlist
-              </span>
-            </div>
+      <SurfacePanel
+        title="Radar de Lançamentos"
+        icon={<Calendar className="w-4 h-4 text-zinc-400" />}
+        action={
+          <span className="text-[11px] text-zinc-500">
+            O que está por vir na sua watchlist
+          </span>
+        }
+      >
+        {isLoading ? (
+          <div className="w-full flex flex-col items-center justify-center gap-3 py-16">
+            <Loader2 className="w-6 h-6 animate-spin text-zinc-500" />
+            <p className="text-zinc-500 text-xs font-medium">
+              Sincronizando com TMDB...
+            </p>
           </div>
-        </div>
+        ) : groupedReleases.length > 0 ? (
+          <div className="flex gap-4 overflow-x-auto pb-2 snap-x scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+            {groupedReleases.map((item) => {
+              const daysUntil = getDaysUntil(item.nextReleaseDate);
+              const isToday = daysUntil === "ESTREIA HOJE!";
+              const totalEps = Array.isArray(item.upcomingEpisodes)
+                ? item.upcomingEpisodes.length
+                : 0;
+              const targetUrl = buildLmsMediaUrl(item.type, item.tmdbId);
 
-        <div className="relative z-10">
-          {isLoading ? (
-            <div className="w-full flex flex-col items-center justify-center gap-3 py-16">
-              <Loader2 className="w-6 h-6 md:w-8 md:h-8 animate-spin text-purple-500/50" />
-              <p className="text-zinc-500 text-xs md:text-sm font-medium">
-                Sincronizando com TMDB...
-              </p>
-            </div>
-          ) : groupedReleases.length > 0 ? (
-            <div className="flex gap-4 md:gap-5 overflow-x-auto pb-4 pt-1 snap-x scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
-              {groupedReleases.map((item) => {
-                const daysUntil = getDaysUntil(item.nextReleaseDate);
-                const isToday = daysUntil === "ESTREIA HOJE!";
-                const totalEps = item.upcomingEpisodes.length;
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => handleOpenSchedule(item)}
+                  className={`cursor-pointer relative group shrink-0 w-[170px] sm:w-[195px] md:w-[220px] flex flex-col gap-3 snap-start rounded-xl p-1.5 transition-colors ${
+                    isToday
+                      ? "bg-emerald-500/[0.07] border border-emerald-500/25"
+                      : "hover:bg-white/[0.03] border border-transparent hover:border-white/[0.08]"
+                  }`}
+                >
+                  <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden border border-white/[0.06] bg-[#161619]">
+                    <MediaPoster
+                      src={item.posterUrl}
+                      alt={item.title}
+                      type={item.type}
+                    />
 
-                const targetUrl =
-                  item.type === "MOVIE"
-                    ? `https://filmes.lucasmks.com.br/filmes/${item.tmdbId}`
-                    : `https://filmes.lucasmks.com.br/series/${item.tmdbId}`;
+                    {item.type === "SERIES" && totalEps > 1 && (
+                      <div className="absolute top-2 left-2 z-10 flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-[#09090b]/90 text-zinc-200 border border-white/[0.1]">
+                        <CalendarDays className="w-3 h-3" />
+                        <span>+{totalEps - 1} eps</span>
+                      </div>
+                    )}
 
-                return (
-                  <div
-                    key={item.id}
-                    onClick={() => handleOpenSchedule(item)}
-                    className={`block cursor-pointer relative group shrink-0 w-[180px] sm:w-[200px] md:w-[240px] flex flex-col gap-3 md:gap-3.5 snap-start rounded-2xl p-2 transition-all duration-300 ${
-                      isToday
-                        ? "bg-purple-500/15 border border-purple-500/40 shadow-[0_0_30px_rgba(168,85,247,0.2)]"
-                        : "hover:bg-white/[0.04] border border-transparent hover:border-white/10"
-                    }`}
-                  >
-                    <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg border border-white/10 bg-zinc-950">
-                      <img
-                        src={item.posterUrl}
-                        alt={item.title}
-                        loading="lazy"
-                        className="w-full h-full object-cover transition-transform duration-500 lg:group-hover:scale-105"
-                      />
-
-                      {item.type === "SERIES" && totalEps > 1 && (
-                        <div className="absolute top-2 left-2 z-10 flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-purple-950/85 text-purple-300 border border-purple-500/30 shadow-md backdrop-blur-md">
-                          <CalendarDays className="w-3 h-3" />
-                          <span>+{totalEps - 1} eps</span>
-                        </div>
-                      )}
-
+                    {targetUrl && (
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          window.open(targetUrl, "_blank", "noopener,noreferrer");
+                          window.open(
+                            targetUrl,
+                            "_blank",
+                            "noopener,noreferrer",
+                          );
                         }}
-                        className="absolute bottom-2 right-2 p-2 rounded-xl bg-black/80 hover:bg-purple-600 text-zinc-300 hover:text-white border border-white/10 opacity-0 group-hover:opacity-100 transition-all z-10 shadow-md"
+                        className="absolute bottom-2 right-2 p-2 rounded-xl bg-[#09090b]/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/[0.1] opacity-0 group-hover:opacity-100 transition-opacity z-10"
                         title="Abrir no LMS Filmes"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                       </button>
+                    )}
 
-                      <div className="hidden lg:flex absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 items-end p-3 pointer-events-none">
-                        <p className="text-[11px] text-zinc-300 line-clamp-5 leading-snug drop-shadow-md">
-                          {item.description || "Clique para ver detalhes e cronograma."}
-                        </p>
-                      </div>
-
-                      {isToday ? (
-                        <div className="absolute top-2 left-2 right-2 flex justify-center">
-                          <span className="px-2.5 py-1 rounded-lg text-[10px] md:text-[11px] font-black tracking-widest uppercase bg-purple-600 text-white shadow-lg border border-purple-300/40 animate-pulse">
-                            Estreia hoje
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="absolute top-2 right-2 px-2 py-0.5 md:px-2 md:py-1 rounded-lg text-[10px] md:text-[11px] font-black tracking-wider uppercase shadow-md backdrop-blur-md border bg-black/80 text-zinc-200 border-white/10">
-                          {daysUntil}
-                        </div>
-                      )}
+                    <div className="hidden lg:flex absolute inset-0 bg-gradient-to-t from-[#09090b]/95 via-[#09090b]/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 items-end p-3 pointer-events-none">
+                      <p className="text-[11px] text-zinc-300 line-clamp-5 leading-snug">
+                        {item.description ||
+                          "Clique para ver detalhes e cronograma."}
+                      </p>
                     </div>
 
-                    <div className="flex flex-col px-1">
-                      <h3
-                        className="text-sm md:text-base font-bold text-white truncate lg:group-hover:text-purple-400 transition-colors"
-                        title={item.title}
-                      >
-                        {item.title}
-                      </h3>
-                      <div className="flex items-center gap-1.5 mt-1 text-[10px] md:text-[11px] font-bold text-zinc-500 uppercase tracking-widest">
-                        {item.type === "MOVIE" ? (
-                          <>
-                            <Film className="w-3 h-3 text-emerald-400" />
-                            Filme · {formatDateToDDMM(item.nextReleaseDate)}
-                          </>
-                        ) : (
-                          <>
-                            <Tv className="w-3 h-3 text-sky-400" />
-                            S{item.nextSeasonNumber?.toString().padStart(2, "0")} E
-                            {item.nextEpisodeNumber?.toString().padStart(2, "0")}{" "}
+                    {isToday ? (
+                      <div className="absolute top-2 left-2 right-2 flex justify-center">
+                        <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold tracking-wider uppercase bg-emerald-500/90 text-zinc-950 border border-emerald-400">
+                          Estreia hoje
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider uppercase border bg-[#09090b]/90 text-zinc-200 border-white/[0.1]">
+                        {daysUntil}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col px-0.5">
+                    <h3
+                      className="text-sm font-semibold text-white truncate group-hover:text-zinc-200 transition-colors"
+                      title={item.title}
+                    >
+                      {item.title}
+                    </h3>
+                    <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-medium text-zinc-500 uppercase tracking-wider">
+                      {item.type === "MOVIE" ? (
+                        <>
+                          <Film className="w-3 h-3 text-emerald-400 shrink-0" />
+                          <span>Filme · {formatDateToDDMM(item.nextReleaseDate)}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Tv className="w-3 h-3 text-sky-400 shrink-0" />
+                          <span>
+                            S{item.nextSeasonNumber?.toString().padStart(2, "0")}{" "}
+                            E{item.nextEpisodeNumber?.toString().padStart(2, "0")}{" "}
                             {totalEps > 1 ? `(+${totalEps - 1})` : ""} ·{" "}
                             {formatDateToDDMM(item.nextReleaseDate)}
-                          </>
-                        )}
-                      </div>
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="w-full flex flex-col items-center justify-center text-center p-8 md:p-10 bg-black/20 rounded-2xl border border-dashed border-white/10">
-              <Info className="w-8 h-8 md:w-10 md:h-10 text-zinc-700 mb-2 md:mb-3" />
-              <p className="text-zinc-400 text-xs md:text-sm font-medium">
-                Nenhum lançamento previsto.
-              </p>
-              <p className="text-zinc-600 text-[10px] md:text-xs mt-1 max-w-sm">
-                Os títulos da sua watchlist já foram lançados ou ainda não têm
-                data definida.
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState
+            icon={<Info className="w-5 h-5" />}
+            title="Nenhum lançamento previsto"
+            description="Os títulos da sua watchlist já foram lançados ou ainda não têm data definida."
+          />
+        )}
+      </SurfacePanel>
 
-      <ReleaseScheduleModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        item={selectedItem}
-      />
+      {isModalOpen && (
+        <Suspense fallback={null}>
+          <ReleaseScheduleModal
+            isOpen={isModalOpen}
+            onClose={() => setIsModalOpen(false)}
+            item={selectedItem}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

@@ -1,25 +1,53 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Gamepad2,
   BarChart3,
-  Tv,
-  Rss,
   ExternalLink,
+  Gamepad2,
+  LayoutGrid,
+  Rss,
+  Tv,
 } from "lucide-react";
 import { gamingApi } from "@/lib/api";
+import { sanitizeUrl } from "@/lib/security";
+import { FilterPill } from "@/components/ui/page-shell";
 import { SteamProfileHeader } from "./steam/steam-profile-header";
 import { SteamStatsChart } from "./steam/steam-stats-chart";
 import { SteamTopInsights } from "./steam/steam-top-insights";
-import { SteamLibraryModal } from "./steam/steam-library-modal";
 import { SteamLinkPrompt } from "./steam/steam-link-prompt";
 import { TwitchWidget } from "./twitch-widget";
 import { TwitchDvrSection } from "./twitch-dvr-section";
 import { GamingNewsTab } from "./tabs/gaming-news-tab";
 
+const SteamLibraryModal = lazy(() =>
+  import("./steam/steam-library-modal").then((m) => ({
+    default: m.SteamLibraryModal,
+  }))
+);
+
+type GamingSectionTab = "all" | "steam" | "twitch" | "news";
+
+const TABS: { id: GamingSectionTab; label: string; icon: React.ReactNode }[] = [
+  { id: "all", label: "Visão Geral", icon: <LayoutGrid className="w-3.5 h-3.5" /> },
+  { id: "steam", label: "Steam", icon: <BarChart3 className="w-3.5 h-3.5" /> },
+  { id: "twitch", label: "Twitch & DVR", icon: <Tv className="w-3.5 h-3.5" /> },
+  { id: "news", label: "Notícias", icon: <Rss className="w-3.5 h-3.5" /> },
+];
+
+function getDvrUrl(): string | null {
+  const envUrl = (import.meta as unknown as { env?: Record<string, string> })
+    ?.env?.VITE_TWITCH_DVR_URL;
+  const fallback =
+    typeof window !== "undefined" && window.location.hostname === "localhost"
+      ? "http://localhost:8082"
+      : "https://dvr.lucasmks.com.br";
+  return sanitizeUrl(envUrl || fallback);
+}
+
 export function GamingDashboard() {
+  const [activeTab, setActiveTab] = useState<GamingSectionTab>("all");
   const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
 
   const { data: profile } = useQuery({
@@ -28,103 +56,95 @@ export function GamingDashboard() {
     retry: false,
   });
 
+  const dvrUrl = getDvrUrl();
+  const showSteam = activeTab === "all" || activeTab === "steam";
+  const showTwitch = activeTab === "all" || activeTab === "twitch";
+  const showNews = activeTab === "all" || activeTab === "news";
+
   return (
-    <div className="flex flex-col gap-8 md:gap-10 w-full">
-      {/* 1. SEÇÃO STEAM: PERFIL E ATIVIDADE ATUAL */}
-      <section className="flex flex-col gap-4">
-        {profile ? (
-          <SteamProfileHeader
-            onOpenLibrary={() => setIsLibraryModalOpen(true)}
-          />
-        ) : (
-          <SteamLinkPrompt />
-        )}
-      </section>
+    <div className="flex flex-col gap-6 w-full">
+      {/* Navigation Filter Bar */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 max-w-full">
+          {TABS.map((tab) => (
+            <FilterPill
+              key={tab.id}
+              active={activeTab === tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              accent="blue"
+            >
+              {tab.icon}
+              <span>{tab.label}</span>
+            </FilterPill>
+          ))}
+        </div>
 
-      {/* 2. SEÇÃO ESTATÍSTICAS STEAM (EM DESTAQUE) */}
-      {profile && (
-        <section className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-                <BarChart3 className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-base md:text-lg font-bold text-white tracking-tight">
-                  Estatísticas & Pulso de Jogo
-                </h3>
-                <p className="text-xs text-zinc-400">
-                  Tempo jogado, consistência e recordes da sua conta Steam.
-                </p>
-              </div>
-            </div>
-
+        <div className="flex items-center gap-2 shrink-0">
+          {profile && (
             <button
+              type="button"
               onClick={() => setIsLibraryModalOpen(true)}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-zinc-300 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.05] text-zinc-200 border border-white/[0.08] hover:bg-white/[0.1] text-xs font-medium transition-colors"
             >
               <Gamepad2 className="w-3.5 h-3.5 text-zinc-400" />
-              <span>Ver Biblioteca</span>
+              <span>Biblioteca Steam</span>
             </button>
-          </div>
+          )}
+          {dvrUrl && (
+            <a
+              href={dvrUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.05] text-zinc-200 border border-white/[0.08] hover:bg-white/[0.1] text-xs font-medium transition-colors"
+            >
+              <span>Painel DVR</span>
+              <ExternalLink className="w-3.5 h-3.5 text-zinc-500" />
+            </a>
+          )}
+        </div>
+      </div>
 
-          <div className="flex flex-col gap-4">
-            <SteamStatsChart />
-            <SteamTopInsights />
-          </div>
+      {/* 1. STEAM SECTION */}
+      {showSteam && (
+        <section className="flex flex-col gap-4">
+          {profile ? (
+            <>
+              <SteamProfileHeader
+                onOpenLibrary={() => setIsLibraryModalOpen(true)}
+              />
+              <SteamStatsChart />
+              <SteamTopInsights />
+            </>
+          ) : (
+            <SteamLinkPrompt />
+          )}
         </section>
       )}
 
-      {/* 3. SEÇÃO TWITCH & GRAVAÇÃO AUTOMÁTICA (DVR) */}
-      <section className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
-              <Tv className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-base md:text-lg font-bold text-white tracking-tight">
-                Twitch Radar & Gravador
-              </h3>
-              <p className="text-xs text-zinc-400">
-                Transmissões ao vivo, canais monitorados e gravações automáticas.
-              </p>
-            </div>
-          </div>
-
-          <a
-            href={
-              (import.meta as any).env?.VITE_TWITCH_DVR_URL ||
-              (typeof window !== "undefined" &&
-              window.location.hostname === "localhost"
-                ? "http://localhost:8082"
-                : "https://dvr.lucasmks.com.br")
-            }
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-zinc-300 transition-colors"
-          >
-            <span>Painel DVR</span>
-            <ExternalLink className="w-3.5 h-3.5 text-zinc-500" />
-          </a>
-        </div>
-
-        <div className="flex flex-col gap-6">
+      {/* 2. TWITCH & DVR SECTION */}
+      {showTwitch && (
+        <section className="flex flex-col gap-4">
           <TwitchWidget showManagement={true} />
           <TwitchDvrSection />
-        </div>
-      </section>
+        </section>
+      )}
 
-      {/* 4. SEÇÃO NOTÍCIAS & ATUALIZAÇÕES */}
-      <section className="flex flex-col gap-4">
-        <GamingNewsTab />
-      </section>
+      {/* 3. GAMING NEWS SECTION */}
+      {showNews && (
+        <section className="flex flex-col gap-4">
+          <GamingNewsTab />
+        </section>
+      )}
 
-      {/* MODAL DA BIBLIOTECA STEAM */}
-      <SteamLibraryModal
-        isOpen={isLibraryModalOpen}
-        onClose={() => setIsLibraryModalOpen(false)}
-      />
+      {/* LAZY STEAM LIBRARY MODAL */}
+      {isLibraryModalOpen && (
+        <Suspense fallback={null}>
+          <SteamLibraryModal
+            isOpen={isLibraryModalOpen}
+            onClose={() => setIsLibraryModalOpen(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

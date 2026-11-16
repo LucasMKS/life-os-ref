@@ -15,11 +15,19 @@ interface F1Session {
 }
 
 export function F1CountdownWidget() {
-  const [timeLeft, setTimeLeft] = useState<{ d: number; h: number; m: number; s: number } | null>(null);
+  const [timeLeft, setTimeLeft] = useState<{
+    d: number;
+    h: number;
+    m: number;
+    s: number;
+  } | null>(null);
 
   const { data: sessions = [], isLoading } = useQuery<F1Session[]>({
     queryKey: ["f1-next-sessions"],
-    queryFn: f1Api.getNextSessions,
+    queryFn: async () => {
+      const data = await f1Api.getNextSessions();
+      return Array.isArray(data) ? data : [];
+    },
     refetchInterval: 1000 * 60 * 5,
     staleTime: 1000 * 60 * 2,
   });
@@ -29,74 +37,97 @@ export function F1CountdownWidget() {
   const nextSession = sessions[0];
 
   useEffect(() => {
-    if (!nextSession?.date) return;
+    if (!nextSession?.date) {
+      setTimeLeft(null);
+      return;
+    }
 
-    const timer = setInterval(() => {
-      const now = new Date().getTime();
-      const target = new Date(nextSession.date).getTime();
+    const target = new Date(nextSession.date).getTime();
+    if (Number.isNaN(target)) {
+      setTimeLeft(null);
+      return;
+    }
+
+    const updateTimer = () => {
+      const now = Date.now();
       const diff = target - now;
 
       if (diff <= 0) {
         setTimeLeft(null);
+        return false;
+      }
+
+      setTimeLeft({
+        d: Math.floor(diff / (1000 * 60 * 60 * 24)),
+        h: Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+        m: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
+        s: Math.floor((diff % (1000 * 60)) / 1000),
+      });
+      return true;
+    };
+
+    if (!updateTimer()) return;
+
+    const timer = setInterval(() => {
+      if (!updateTimer()) {
         clearInterval(timer);
-      } else {
-        setTimeLeft({
-          d: Math.floor(diff / (1000 * 60 * 60 * 24)),
-          h: Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
-          m: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
-          s: Math.floor((diff % (1000 * 60)) / 1000),
-        });
       }
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [nextSession]);
+  }, [nextSession?.date]);
 
   if (isLoading) {
     return (
-      <div className="bg-[#121214]/80 backdrop-blur-xl border border-white/5 rounded-3xl p-6 h-full flex items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-red-500/50" />
+      <div className="bg-[#111113] border border-white/[0.06] rounded-2xl p-5 h-full flex items-center justify-center min-h-[200px]">
+        <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
       </div>
     );
   }
 
   if (!nextSession) return null;
 
-  const isLive = nextSession.status === "ao vivo";
+  const normalizedStatus = (nextSession.status || "").toLowerCase();
+  const isLive = normalizedStatus === "ao vivo" || normalizedStatus === "live";
 
   return (
-    <div className="bg-[#121214]/80 backdrop-blur-xl border border-white/5 border-t-red-500/50 rounded-3xl p-6 lg:p-8 shadow-2xl relative overflow-hidden flex flex-col h-full group">
-      {/* Background Glow */}
-      <div className="absolute -top-24 -right-24 w-64 h-64 bg-red-500/10 blur-[80px] rounded-full pointer-events-none group-hover:opacity-100 opacity-50 transition-opacity" />
-      
-      <div className="flex items-start justify-between mb-6 relative z-10">
-        <div>
+    <section className="bg-[#111113] border border-white/[0.06] border-t-2 border-t-red-500/70 hover:border-white/[0.12] hover:border-t-red-500/80 transition-colors rounded-2xl p-5 flex flex-col h-full">
+      <div className="flex items-start justify-between gap-3 pb-3.5 mb-4 border-b border-white/[0.06]">
+        <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <Timer className="text-red-500 w-5 h-5" />
-            <h2 className="text-lg font-bold text-white tracking-tight">Próxima Sessão</h2>
+            <Timer className="w-4 h-4 text-red-400 shrink-0" />
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
+              Próxima Sessão
+            </h2>
           </div>
-          <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider line-clamp-1">
+          <p className="text-xs font-medium text-zinc-500 truncate">
             {nextSession.meetingName || "Fórmula 1"}
           </p>
         </div>
 
         {isLive && (
-          <div className="flex items-center gap-1.5 bg-red-500/20 px-2.5 py-1 rounded-full border border-red-500/30 animate-pulse">
-            <div className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,1)]" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-red-400">LIVE</span>
+          <div className="inline-flex items-center gap-1.5 bg-red-500/10 px-2.5 py-1 rounded-full border border-red-500/20 shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-red-400">
+              Live
+            </span>
           </div>
         )}
       </div>
 
-      <div className="flex-grow flex flex-col justify-center relative z-10">
-        <h3 className="text-2xl font-black text-white mb-4 tracking-tighter leading-none group-hover:text-red-400 transition-colors">
-          {nextSession.name}
+      <div className="flex-grow flex flex-col justify-center">
+        <h3 className="text-xl font-bold text-white mb-4 tracking-tight leading-snug">
+          {nextSession.name || "Sessão F1"}
         </h3>
 
         {isLive ? (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-center">
-            <p className="text-red-400 font-bold text-sm uppercase tracking-widest">Sessão em Andamento</p>
-            <p className="text-zinc-400 text-[10px] mt-1">Acompanhe a telemetria na aba F1</p>
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3.5 text-center">
+            <p className="text-red-400 font-semibold text-xs uppercase tracking-wider">
+              Sessão em Andamento
+            </p>
+            <p className="text-zinc-400 text-xs mt-1">
+              Acompanhe os detalhes na aba F1
+            </p>
           </div>
         ) : timeLeft ? (
           <div className="grid grid-cols-4 gap-2">
@@ -106,31 +137,47 @@ export function F1CountdownWidget() {
               { label: "Min", val: timeLeft.m },
               { label: "Seg", val: timeLeft.s },
             ].map((unit) => (
-              <div key={unit.label} className="bg-black/40 border border-white/5 rounded-xl p-2 flex flex-col items-center">
-                <span className="text-xl font-mono font-black text-white">{unit.val.toString().padStart(2, "0")}</span>
-                <span className="text-[8px] font-bold uppercase text-zinc-500 tracking-tighter">{unit.label}</span>
+              <div
+                key={unit.label}
+                className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-2 flex flex-col items-center"
+              >
+                <span className="text-lg sm:text-xl font-mono font-bold text-white tabular-nums">
+                  {unit.val.toString().padStart(2, "0")}
+                </span>
+                <span className="text-[10px] font-medium uppercase text-zinc-500">
+                  {unit.label}
+                </span>
               </div>
             ))}
           </div>
         ) : (
-          <div className="text-zinc-500 font-mono text-sm">Calculando...</div>
+          <div className="text-zinc-500 font-mono text-xs">Calculando...</div>
         )}
       </div>
 
-      {/* Weather Mini Stats */}
-      <div className="mt-6 pt-4 border-t border-white/5 flex items-center justify-between relative z-10">
+      <div className="mt-5 pt-3.5 border-t border-white/[0.06] flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">
             <Thermometer className="w-3.5 h-3.5 text-zinc-500" />
-            <span className="text-xs font-bold text-zinc-300">{weather?.trackTemperature ? `${weather.trackTemperature}°` : "--"}</span>
+            <span className="text-xs font-medium text-zinc-300 tabular-nums">
+              {weather?.trackTemperature != null
+                ? `${weather.trackTemperature}°`
+                : "--"}
+            </span>
           </div>
           <div className="flex items-center gap-1.5">
-            <CloudRain className={`w-3.5 h-3.5 ${weather?.rainfall > 0 ? "text-sky-400" : "text-zinc-500"}`} />
-            <span className="text-xs font-bold text-zinc-300">{weather?.rainfall > 0 ? "Chuva" : "Seco"}</span>
+            <CloudRain
+              className={`w-3.5 h-3.5 ${
+                (weather?.rainfall ?? 0) > 0 ? "text-sky-400" : "text-zinc-500"
+              }`}
+            />
+            <span className="text-xs font-medium text-zinc-300">
+              {(weather?.rainfall ?? 0) > 0 ? "Chuva" : "Seco"}
+            </span>
           </div>
         </div>
-        <Flag className="w-4 h-4 text-zinc-700 opacity-50" />
+        <Flag className="w-3.5 h-3.5 text-red-500/70" />
       </div>
-    </div>
+    </section>
   );
 }

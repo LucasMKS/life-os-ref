@@ -1,235 +1,315 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { lazy, Suspense, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Wallet,
-  CreditCard,
   BellRing,
   Calendar,
-  ArrowUpRight,
-  PlusCircle,
-  Server,
-  MonitorPlay,
-  Loader2,
   CheckCircle2,
-  Trash2,
+  CreditCard,
   Edit3,
-  X,
+  Layers,
+  Loader2,
+  MonitorPlay,
   PieChart as PieChartIcon,
+  Plus,
+  RefreshCw,
+  Server,
+  Trash2,
+  Wallet,
 } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
-import { financeApi } from "@/lib/api";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { toast } from "sonner";
+import {
+  EmptyState,
+  FilterPill,
+  StatCard,
+  SurfacePanel,
+} from "@/components/ui/page-shell";
+import { financeApi } from "@/lib/api";
+import {
+  ALLOWED_CATEGORIES,
+  formatCurrency,
+  formatDate,
+  getDaysUntil,
+  isUrgent,
+  normalizeSubscription,
+  parseSafeDate,
+  type SubscriptionItem,
+  type SubscriptionPayload,
+} from "./types";
 
-const formatDate = (dateStr: string) => {
-  if (!dateStr) return "";
-  const date = new Date(dateStr + "T12:00:00Z");
-  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
-};
+const SubscriptionModal = lazy(() => import("./subscription-modal"));
 
-const isUrgent = (dateStr: string) => {
-  if (!dateStr) return false;
-  const today = new Date();
-  const paymentDate = new Date(dateStr + "T12:00:00Z");
-  const diffDays = Math.ceil(
-    (paymentDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
-  );
-  return diffDays <= 3 && diffDays >= 0;
-};
+interface ChartEntry {
+  name: string;
+  value: number;
+  color: string;
+}
 
-const CustomTooltip = ({ active, payload }: any) => {
-  if (active && payload && payload.length) {
-    const data = payload[0].payload;
-    return (
-      <div className="bg-[#09090b]/90 backdrop-blur-md border border-white/10 p-3 rounded-xl shadow-2xl flex items-center gap-3">
-        <div
-          className="w-3 h-3 rounded-full shadow-[0_0_8px_rgba(255,255,255,0.3)]"
-          style={{ backgroundColor: data.color }}
-        />
-        <div>
-          <p className="text-zinc-400 text-[10px] uppercase tracking-wider font-bold mb-1">
-            {data.name}
-          </p>
-          <p className="text-white font-mono font-bold text-sm drop-shadow-md">
-            R$ {data.value.toFixed(2).replace(".", ",")}
-          </p>
-        </div>
+function CustomTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: ChartEntry }>;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const data = payload[0]?.payload;
+  if (!data) return null;
+
+  return (
+    <div className="bg-[#161619] border border-white/[0.08] px-3 py-2.5 rounded-xl shadow-lg flex items-center gap-2.5">
+      <span
+        className="w-2.5 h-2.5 rounded-full shrink-0"
+        style={{ backgroundColor: data.color }}
+      />
+      <div>
+        <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+          {data.name}
+        </p>
+        <p className="text-sm font-semibold text-white tabular-nums">
+          {formatCurrency(data.value)}
+        </p>
       </div>
-    );
-  }
-  return null;
-};
+    </div>
+  );
+}
 
-const getCategoryIcon = (category: string) => {
-  const cat = category?.toLowerCase() || "";
+function getCategoryIcon(category: string) {
+  const cat = category.toLowerCase();
   if (
     cat.includes("dev") ||
     cat.includes("infra") ||
     cat.includes("hospedagem") ||
     cat.includes("software")
-  )
+  ) {
     return Server;
+  }
   if (
     cat.includes("entretenimento") ||
     cat.includes("streaming") ||
     cat.includes("mídia")
-  )
+  ) {
     return MonitorPlay;
+  }
   return Wallet;
-};
+}
 
-const PRESET_COLORS = [
-  "#e50914",
-  "#1db954",
-  "#0080ff",
-  "#a855f7",
-  "#eab308",
-  "#ffffff",
-  "#52525b",
-];
+function formatMonthLabel(monthKey: string): string {
+  const [yearStr, monthStr] = monthKey.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return monthKey;
+  const date = new Date(Date.UTC(year, month - 1, 15));
+  return date.toLocaleDateString("pt-BR", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function getMonthlyImpact(
+  sub: SubscriptionItem,
+  currentMonth: number,
+  currentYear: number,
+): number {
+  if (sub.billingCycle === "Anual dividida") {
+    return sub.price / 12;
+  }
+  if (sub.billingCycle === "Anual integral") {
+    const paymentDate = parseSafeDate(sub.nextPayment);
+    if (
+      paymentDate &&
+      paymentDate.getUTCMonth() === currentMonth &&
+      paymentDate.getUTCFullYear() === currentYear
+    ) {
+      return sub.price;
+    }
+    return 0;
+  }
+  return sub.price;
+}
 
 export function FinanceDashboard() {
   const queryClient = useQueryClient();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    name: "",
-    category: "Entretenimento",
-    price: "",
-    billingCycle: "Mensal",
-    nextPayment: "",
-    color: PRESET_COLORS[0],
-  });
+  const [editingSub, setEditingSub] = useState<SubscriptionItem | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>("Todas");
+  const [selectedMonth, setSelectedMonth] = useState<string>("Todos");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [referenceDate] = useState(() => new Date());
 
-  const { data: rawSubscriptions = [], isLoading } = useQuery({
+  const {
+    data: rawSubscriptions,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["finance-subscriptions"],
     queryFn: financeApi.getSubscriptions,
   });
-  const subscriptions = Array.isArray(rawSubscriptions) ? rawSubscriptions : [];
 
-  const addMutation = useMutation({
-    mutationFn: financeApi.addSubscription,
-    onSuccess: () => {
-      toast.success("Assinatura salva!");
-      queryClient.invalidateQueries({ queryKey: ["finance-subscriptions"] });
-      closeModal();
-    },
-    onError: () => toast.error("Erro ao salvar assinatura."),
-  });
-
-  const editMutation = useMutation({
-    mutationFn: financeApi.editSubscription,
-    onSuccess: () => {
-      toast.success("Assinatura atualizada!");
-      queryClient.invalidateQueries({ queryKey: ["finance-subscriptions"] });
-      closeModal();
-    },
-    onError: () => toast.error("Erro ao editar assinatura."),
-  });
-
-  const payMutation = useMutation({
-    mutationFn: financeApi.markAsPaid,
-    onSuccess: () => {
-      toast.success("Assinatura renovada!");
-      queryClient.invalidateQueries({ queryKey: ["finance-subscriptions"] });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: financeApi.deleteSubscription,
-    onSuccess: () => {
-      toast.success("Assinatura removida.");
-      queryClient.invalidateQueries({ queryKey: ["finance-subscriptions"] });
-    },
-  });
-
-  const totalMonthly = useMemo(() => {
-    const currentMonth = new Date().getMonth();
-    const currentYear = new Date().getFullYear();
-
-    return subscriptions.reduce((acc: number, curr: any) => {
-      let monthlyImpact = 0;
-
-      if (curr.billingCycle === "Anual dividida") {
-        monthlyImpact = curr.price / 12;
-      } else if (curr.billingCycle === "Anual integral") {
-        const paymentDate = new Date(curr.nextPayment + "T12:00:00Z");
-        if (
-          paymentDate.getMonth() === currentMonth &&
-          paymentDate.getFullYear() === currentYear
-        ) {
-          monthlyImpact = curr.price;
-        }
-      } else {
-        monthlyImpact = curr.price;
-      }
-
-      return acc + (monthlyImpact || 0);
-    }, 0);
-  }, [subscriptions]);
-
-  const chartData = useMemo(() => {
-    if (!subscriptions.length) return [];
-    const grouped = subscriptions.reduce((acc: any, sub: any) => {
-      if (!acc[sub.category]) {
-        acc[sub.category] = {
-          name: sub.category,
-          value: 0,
-          color: sub.color || "#52525b",
-        };
-      }
-      acc[sub.category].value += sub.price;
-      return acc;
-    }, {});
-    return Object.values(grouped);
-  }, [subscriptions]);
-
-  const urgentSubscription = subscriptions.find((sub: any) =>
-    isUrgent(sub.nextPayment),
-  );
+  const subscriptions = useMemo<SubscriptionItem[]>(() => {
+    if (!Array.isArray(rawSubscriptions)) return [];
+    return rawSubscriptions
+      .map(normalizeSubscription)
+      .filter((item): item is SubscriptionItem => item !== null);
+  }, [rawSubscriptions]);
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setEditingId(null);
-    setFormData({
-      name: "",
-      category: "Entretenimento",
-      price: "",
-      billingCycle: "Mensal",
-      nextPayment: "",
-      color: PRESET_COLORS[0],
-    });
+    setEditingSub(null);
   };
 
-  const openEditModal = (sub: any) => {
-    setEditingId(sub.id);
-    setFormData({
-      name: sub.name,
-      category: sub.category,
-      price: sub.price.toString(),
-      billingCycle: sub.billingCycle || "Mensal",
-      nextPayment: sub.nextPayment,
-      color: sub.color || PRESET_COLORS[0],
+  const addMutation = useMutation({
+    mutationFn: (payload: SubscriptionPayload) =>
+      financeApi.addSubscription(payload),
+    onSuccess: () => {
+      toast.success("Assinatura adicionada.");
+      queryClient.invalidateQueries({ queryKey: ["finance-subscriptions"] });
+      closeModal();
+    },
+    onError: () => toast.error("Não foi possível salvar a assinatura."),
+  });
+
+  const editMutation = useMutation({
+    mutationFn: (payload: SubscriptionPayload) =>
+      financeApi.editSubscription(payload),
+    onSuccess: () => {
+      toast.success("Assinatura atualizada.");
+      queryClient.invalidateQueries({ queryKey: ["finance-subscriptions"] });
+      closeModal();
+    },
+    onError: () => toast.error("Não foi possível atualizar a assinatura."),
+  });
+
+  const payMutation = useMutation({
+    mutationFn: (id: string) => financeApi.markAsPaid(id),
+    onSuccess: () => {
+      toast.success("Ciclo renovado.");
+      queryClient.invalidateQueries({ queryKey: ["finance-subscriptions"] });
+    },
+    onError: () => toast.error("Não foi possível renovar o ciclo."),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => financeApi.deleteSubscription(id),
+    onSuccess: () => {
+      toast.success("Assinatura removida.");
+      setConfirmDeleteId(null);
+      queryClient.invalidateQueries({ queryKey: ["finance-subscriptions"] });
+    },
+    onError: () => toast.error("Não foi possível remover a assinatura."),
+  });
+
+  const { totalMonthly, totalAnnual, monthlyCount, annualCount } = useMemo(() => {
+    const currentMonth = referenceDate.getUTCMonth();
+    const currentYear = referenceDate.getUTCFullYear();
+
+    let monthlySum = 0;
+    let annualSum = 0;
+    let mCount = 0;
+    let aCount = 0;
+
+    for (const sub of subscriptions) {
+      monthlySum += getMonthlyImpact(sub, currentMonth, currentYear);
+      if (sub.billingCycle.startsWith("Anual")) {
+        annualSum += sub.price;
+        aCount += 1;
+      } else {
+        annualSum += sub.price * 12;
+        mCount += 1;
+      }
+    }
+
+    return {
+      totalMonthly: monthlySum,
+      totalAnnual: annualSum,
+      monthlyCount: mCount,
+      annualCount: aCount,
+    };
+  }, [subscriptions, referenceDate]);
+
+  const nextDueSubscription = useMemo(() => {
+    const upcoming = subscriptions
+      .map((sub) => ({ sub, days: getDaysUntil(sub.nextPayment) }))
+      .filter(
+        (entry): entry is { sub: SubscriptionItem; days: number } =>
+          entry.days !== null && entry.days >= 0,
+      )
+      .sort((a, b) => a.days - b.days);
+    return upcoming[0]?.sub ?? null;
+  }, [subscriptions]);
+
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>(ALLOWED_CATEGORIES);
+    for (const sub of subscriptions) {
+      if (sub.category) set.add(sub.category);
+    }
+    return ["Todas", ...Array.from(set)];
+  }, [subscriptions]);
+
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    for (const sub of subscriptions) {
+      if (sub.nextPayment && sub.nextPayment.length >= 7) {
+        months.add(sub.nextPayment.slice(0, 7));
+      }
+    }
+    return Array.from(months).sort();
+  }, [subscriptions]);
+
+  const filteredSubscriptions = useMemo(() => {
+    return subscriptions.filter((sub) => {
+      const matchesCategory =
+        selectedCategory === "Todas" || sub.category === selectedCategory;
+      const matchesMonth =
+        selectedMonth === "Todos" ||
+        sub.nextPayment.startsWith(selectedMonth);
+      return matchesCategory && matchesMonth;
     });
+  }, [subscriptions, selectedCategory, selectedMonth]);
+
+  const chartData = useMemo<ChartEntry[]>(() => {
+    const source = filteredSubscriptions;
+    if (source.length === 0) return [];
+
+    const grouped = new Map<string, ChartEntry>();
+    for (const sub of source) {
+      const existing = grouped.get(sub.category);
+      if (existing) {
+        existing.value += sub.price;
+      } else {
+        grouped.set(sub.category, {
+          name: sub.category,
+          value: sub.price,
+          color: sub.color,
+        });
+      }
+    }
+    return Array.from(grouped.values()).sort((a, b) => b.value - a.value);
+  }, [filteredSubscriptions]);
+
+  const chartTotal = useMemo(
+    () => chartData.reduce((sum, item) => sum + item.value, 0),
+    [chartData],
+  );
+
+  const handleOpenCreate = () => {
+    setEditingSub(null);
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name || !formData.price || !formData.nextPayment) {
-      toast.error("Preencha todos os campos obrigatórios.");
-      return;
-    }
+  const handleOpenEdit = (sub: SubscriptionItem) => {
+    setEditingSub(sub);
+    setIsModalOpen(true);
+  };
 
-    const payload = {
-      ...formData,
-      price: parseFloat(formData.price.replace(",", ".")),
-    };
-
-    if (editingId) {
-      editMutation.mutate({ id: editingId, ...payload });
+  const handleModalSubmit = (payload: SubscriptionPayload) => {
+    if (payload.id) {
+      editMutation.mutate(payload);
     } else {
       addMutation.mutate(payload);
     }
@@ -237,441 +317,368 @@ export function FinanceDashboard() {
 
   if (isLoading) {
     return (
-      <div className="w-full flex items-center justify-center min-h-[400px]">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-500/50" />
+      <div className="w-full flex items-center justify-center min-h-[360px]">
+        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
       </div>
     );
   }
 
+  if (isError) {
+    return (
+      <EmptyState
+        icon={<Wallet className="w-5 h-5" />}
+        title="Erro ao carregar assinaturas"
+        description="Não foi possível buscar seus dados financeiros no momento."
+        action={
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-100 text-zinc-950 hover:bg-white font-semibold rounded-xl text-xs transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Tentar novamente
+          </button>
+        }
+      />
+    );
+  }
+
+  const nextDueUrgent = nextDueSubscription
+    ? isUrgent(nextDueSubscription.nextPayment)
+    : false;
+
   return (
-    <div className="w-full flex flex-col gap-5 md:gap-8 h-full relative">
-      {/* MODAL DE ADIÇÃO/EDIÇÃO */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-[#121214]/95 backdrop-blur-2xl border border-white/10 border-t-amber-500/50 rounded-3xl p-5 md:p-6 w-full max-w-md shadow-[0_0_50px_rgba(0,0,0,0.8)] animate-in zoom-in-95 duration-200 overflow-y-auto max-h-[90vh]">
-            <div className="flex justify-between items-center mb-5 md:mb-6">
-              <h3 className="text-lg md:text-xl font-bold text-white flex items-center gap-2">
-                {editingId ? (
-                  <Edit3 className="w-5 h-5 text-amber-500" />
-                ) : (
-                  <PlusCircle className="w-5 h-5 text-amber-500" />
-                )}
-                {editingId ? "Editar Assinatura" : "Nova Assinatura"}
-              </h3>
-              <button
-                onClick={closeModal}
-                className="text-zinc-500 hover:text-white transition-colors p-1 bg-white/5 hover:bg-white/10 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+    <div className="w-full flex flex-col gap-6">
+      {/* KPI SUMMARY */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard
+          label="Gasto Mensal Previsto"
+          value={formatCurrency(totalMonthly)}
+          hint={`Projeção anual: ${formatCurrency(totalAnnual)}`}
+          icon={<CreditCard className="w-4 h-4 text-cyan-400" />}
+          accent="cyan"
+        />
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <div>
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider ml-1">
-                  Serviço
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ex: Netflix, AWS..."
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500/50 mt-1 shadow-inner"
-                  autoFocus
-                />
-              </div>
+        <StatCard
+          label="Assinaturas Ativas"
+          value={subscriptions.length}
+          hint={`${monthlyCount} mensais · ${annualCount} anuais`}
+          icon={<Layers className="w-4 h-4 text-cyan-400" />}
+          accent="cyan"
+        />
 
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1">
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider ml-1">
-                    Preço (R$)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="29.90"
-                    value={formData.price}
-                    onChange={(e) =>
-                      setFormData({ ...formData, price: e.target.value })
-                    }
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500/50 mt-1 shadow-inner"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider ml-1">
-                    Ciclo
-                  </label>
-                  <select
-                    value={formData.billingCycle}
-                    onChange={(e) =>
-                      setFormData({ ...formData, billingCycle: e.target.value })
-                    }
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500/50 mt-1 appearance-none shadow-inner cursor-pointer"
-                  >
-                    <option value="Mensal">Mensal</option>
-                    <option value="Anual dividida">
-                      Anual (Dividida em 12x)
-                    </option>
-                    <option value="Anual integral">Anual (Paga à vista)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1">
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider ml-1">
-                    Categoria
-                  </label>
-                  <select
-                    value={formData.category}
-                    onChange={(e) =>
-                      setFormData({ ...formData, category: e.target.value })
-                    }
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500/50 mt-1 appearance-none shadow-inner cursor-pointer"
-                  >
-                    <option value="Entretenimento">Entretenimento</option>
-                    <option value="Infra & Dev">Infra & Dev</option>
-                    <option value="Serviços Essenciais">
-                      Serviços Essenciais
-                    </option>
-                    <option value="Outros">Outros</option>
-                  </select>
-                </div>
-                <div className="flex-1">
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider ml-1">
-                    Próx. Vencimento
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.nextPayment}
-                    onChange={(e) =>
-                      setFormData({ ...formData, nextPayment: e.target.value })
-                    }
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-zinc-300 focus:outline-none focus:border-amber-500/50 mt-1 shadow-inner cursor-pointer"
-                    style={{ colorScheme: "dark" }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider ml-1">
-                  Cor da Marca
-                </label>
-                <div className="flex items-center justify-between gap-1 md:gap-2 mt-2 mb-2 bg-black/20 p-3 rounded-xl border border-white/5">
-                  {PRESET_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, color })}
-                      className={`w-6 h-6 md:w-8 md:h-8 rounded-full transition-all duration-300 ${formData.color === color ? "scale-110 ring-2 ring-offset-2 ring-offset-[#121214] ring-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.5)]" : "hover:scale-110 opacity-70 hover:opacity-100"}`}
-                      style={{
-                        backgroundColor: color,
-                        border: "1px solid rgba(255,255,255,0.1)",
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={addMutation.isPending || editMutation.isPending}
-                className="w-full py-3 md:py-3.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-black font-extrabold rounded-xl transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)] mt-2 flex items-center justify-center gap-2"
-              >
-                {addMutation.isPending || editMutation.isPending ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : editingId ? (
-                  "Salvar Alterações"
-                ) : (
-                  "Salvar Assinatura"
-                )}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* --- CARDS SUPERIORES --- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="sm:col-span-2 md:col-span-1 bg-[#121214]/80 backdrop-blur-xl border border-white/5 border-t-amber-500/50 rounded-3xl p-4 md:p-8 shadow-xl relative overflow-hidden group hover:-translate-y-1 transition-transform duration-300">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none transition-opacity group-hover:opacity-100 opacity-50"></div>
-          <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-10 transition-opacity">
-            <Wallet className="w-20 h-20 md:w-24 md:h-24 text-amber-500 -rotate-12" />
-          </div>
-          <p className="text-[10px] md:text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2 md:mb-3 flex items-center gap-2 relative z-10">
-            <CreditCard className="w-3.5 h-3.5 md:w-4 md:h-4 text-amber-500" />{" "}
-            Gasto Previsto no Mês
-          </p>
-          <div className="flex items-baseline gap-1 relative z-10">
-            <span className="text-amber-500/50 font-medium text-sm md:text-base">
-              R$
-            </span>
-            <span className="text-3xl md:text-4xl font-black text-white tracking-tight drop-shadow-md">
-              {totalMonthly.toFixed(2).replace(".", ",")}
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-[#121214]/80 backdrop-blur-xl border border-white/5 border-t-blue-500/50 rounded-3xl p-4 md:p-8 shadow-xl relative overflow-hidden group hover:-translate-y-1 transition-transform duration-300">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl pointer-events-none transition-opacity group-hover:opacity-100 opacity-50"></div>
-          <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-10 transition-opacity">
-            <Server className="w-20 h-20 md:w-24 md:h-24 text-blue-500 -rotate-12" />
-          </div>
-          <p className="text-[10px] md:text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2 md:mb-3 flex items-center gap-2 relative z-10">
-            <Server className="w-3.5 h-3.5 md:w-4 md:h-4 text-blue-500" />{" "}
-            Assinaturas Ativas
-          </p>
-          <div className="flex items-baseline gap-2 relative z-10">
-            <span className="text-3xl md:text-4xl font-black text-white tracking-tight drop-shadow-md">
-              {subscriptions.length}
-            </span>
-            <span className="text-zinc-500 text-xs md:text-sm font-medium">
-              serviços rodando
-            </span>
-          </div>
-        </div>
-
-        {urgentSubscription ? (
-          <div className="bg-red-950/20 backdrop-blur-xl border border-red-500/20 border-t-red-500/60 rounded-3xl p-4 md:p-8 shadow-[0_0_30px_rgba(239,68,68,0.1)] relative overflow-hidden group hover:-translate-y-1 transition-transform duration-300">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full blur-2xl pointer-events-none transition-opacity group-hover:opacity-100 opacity-70"></div>
-            <div className="absolute top-4 right-5 md:top-5 md:right-6 z-10">
-              <div className="w-2.5 h-2.5 md:w-3 md:h-3 bg-red-500 rounded-full animate-ping absolute opacity-75"></div>
-              <div className="w-2.5 h-2.5 md:w-3 md:h-3 bg-red-500 rounded-full relative shadow-[0_0_10px_rgba(239,68,68,1)]"></div>
-            </div>
-            <p className="text-[10px] md:text-xs font-bold text-red-400 uppercase tracking-widest mb-2 md:mb-3 flex items-center gap-2 relative z-10">
-              <BellRing className="w-3.5 h-3.5 md:w-4 md:h-4" /> Urgente
-            </p>
-            <p className="text-lg md:text-xl font-bold text-white leading-tight mb-1 truncate drop-shadow-md relative z-10">
-              {urgentSubscription.name}
-            </p>
-            <p className="text-xs md:text-sm font-mono font-medium text-red-400/80 relative z-10">
-              Vence em {formatDate(urgentSubscription.nextPayment)} • R${" "}
-              {urgentSubscription.price.toFixed(2).replace(".", ",")}
-            </p>
-          </div>
-        ) : (
-          <div className="bg-[#121214]/80 backdrop-blur-xl border border-white/5 border-t-emerald-500/50 rounded-3xl p-4 md:p-8 shadow-xl flex flex-col items-center justify-center text-center group hover:-translate-y-1 transition-transform duration-300">
-            <CheckCircle2 className="w-8 h-8 md:w-10 md:h-10 text-emerald-500 mb-2 md:mb-3 drop-shadow-[0_0_10px_rgba(16,185,129,0.4)]" />
-            <p className="text-sm md:text-base font-bold text-white">
-              Tudo tranquilo!
-            </p>
-            <p className="text-[10px] md:text-xs text-zinc-500 font-medium mt-1">
-              Nenhum vencimento próximo.
-            </p>
-          </div>
-        )}
+        <StatCard
+          label="Próximo Vencimento"
+          value={nextDueSubscription ? nextDueSubscription.name : "Tudo em dia"}
+          hint={
+            nextDueSubscription
+              ? `${nextDueUrgent ? "Urgente · " : ""}Vence em ${formatDate(nextDueSubscription.nextPayment)} · ${formatCurrency(nextDueSubscription.price)}`
+              : "Nenhum vencimento próximo"
+          }
+          icon={
+            nextDueUrgent ? (
+              <BellRing className="w-4 h-4 text-red-400" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            )
+          }
+          accent="cyan"
+        />
       </div>
 
-      {/* --- DASHBOARD INFERIOR --- */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 md:gap-6 w-full animate-in fade-in duration-700">
-        <div className="lg:col-span-8 bg-[#121214]/80 backdrop-blur-xl border border-white/5 border-t-amber-500/50 rounded-3xl p-4 md:p-8 shadow-2xl flex flex-col h-full min-h-[400px] relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl pointer-events-none transition-opacity group-hover:opacity-100 opacity-50"></div>
-
-          <div className="flex items-center justify-between mb-6 md:mb-8 relative z-10">
-            <h2 className="text-lg md:text-xl font-bold text-white flex items-center gap-2">
-              <ArrowUpRight className="w-4 h-4 md:w-5 md:h-5 text-amber-500" />{" "}
-              Meus Contratos
-            </h2>
-            <button
-              onClick={() => {
-                setEditingId(null);
-                setIsModalOpen(true);
-              }}
-              className="flex items-center gap-2 text-[10px] md:text-xs font-bold text-amber-400 bg-white/5 border border-white/10 hover:border-amber-500/30 hover:bg-amber-500/10 px-3 py-1.5 md:px-4 md:py-2 rounded-xl transition-all shadow-sm"
+      {/* FILTER & ACTION TOOLBAR */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
+          {availableCategories.map((cat) => (
+            <FilterPill
+              key={cat}
+              active={selectedCategory === cat}
+              onClick={() => setSelectedCategory(cat)}
+              accent="cyan"
             >
-              <PlusCircle className="w-3.5 h-3.5 md:w-4 md:h-4" /> Nova
-            </button>
-          </div>
+              {cat}
+            </FilterPill>
+          ))}
+        </div>
 
-          <div className="flex-grow overflow-y-auto pr-1 md:pr-2 space-y-3 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent relative z-10">
-            {subscriptions.length === 0 ? (
-              <div className="text-center py-20 flex flex-col items-center bg-black/20 rounded-2xl border border-white/5 border-dashed">
-                <Wallet className="w-10 h-10 md:w-12 md:h-12 text-zinc-700 mb-3" />
-                <p className="text-zinc-500 text-xs md:text-sm font-medium mb-3">
-                  Nenhuma assinatura cadastrada.
-                </p>
-              </div>
-            ) : (
-              subscriptions.map((sub: any) => {
+        <div className="flex items-center gap-2.5 shrink-0">
+          {availableMonths.length > 0 && (
+            <select
+              aria-label="Filtrar por mês de vencimento"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="bg-[#111113] border border-white/[0.06] hover:border-white/[0.12] rounded-xl px-3 py-2 text-xs font-medium text-zinc-300 focus:outline-none focus:border-white/20 cursor-pointer"
+            >
+              <option value="Todos">Todos os meses</option>
+              {availableMonths.map((month) => (
+                <option key={month} value={month}>
+                  {formatMonthLabel(month)}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-zinc-100 text-zinc-950 hover:bg-white font-semibold rounded-xl text-xs transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Nova assinatura
+          </button>
+        </div>
+      </div>
+
+      {/* MAIN CONTENT GRID */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* SUBSCRIPTIONS LIST */}
+        <SurfacePanel
+          className="lg:col-span-8"
+          title="Assinaturas"
+          icon={<Wallet className="w-4 h-4 text-cyan-400" />}
+          accent="cyan"
+          action={
+            <span className="text-xs text-zinc-500 tabular-nums">
+              {filteredSubscriptions.length}{" "}
+              {filteredSubscriptions.length === 1 ? "item" : "itens"}
+            </span>
+          }
+          noPadding
+        >
+          {filteredSubscriptions.length === 0 ? (
+            <div className="p-5">
+              <EmptyState
+                icon={<Wallet className="w-5 h-5" />}
+                title={
+                  subscriptions.length === 0
+                    ? "Nenhuma assinatura cadastrada"
+                    : "Nenhum resultado para o filtro"
+                }
+                description={
+                  subscriptions.length === 0
+                    ? "Adicione seus serviços recorrentes para acompanhar vencimentos e custos mensais."
+                    : "Tente selecionar outra categoria ou mês de vencimento."
+                }
+                action={
+                  subscriptions.length === 0 ? (
+                    <button
+                      type="button"
+                      onClick={handleOpenCreate}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-zinc-100 text-zinc-950 hover:bg-white font-semibold rounded-xl text-xs transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Adicionar assinatura
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCategory("Todas");
+                        setSelectedMonth("Todos");
+                      }}
+                      className="px-3.5 py-2 bg-white/[0.05] text-zinc-200 border border-white/[0.08] hover:bg-white/[0.1] rounded-xl text-xs font-medium transition-colors"
+                    >
+                      Limpar filtros
+                    </button>
+                  )
+                }
+              />
+            </div>
+          ) : (
+            <ul className="divide-y divide-white/[0.06]">
+              {filteredSubscriptions.map((sub) => {
                 const Icon = getCategoryIcon(sub.category);
                 const urgent = isUrgent(sub.nextPayment);
+                const isConfirmingDelete = confirmDeleteId === sub.id;
 
                 return (
-                  <div
+                  <li
                     key={sub.id}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl border border-white/5 bg-black/40 hover:bg-white/[0.03] hover:border-amber-500/30 transition-all group relative overflow-hidden shadow-sm hover:shadow-[0_8px_20px_-10px_rgba(245,158,11,0.2)] hover:-translate-y-0.5 gap-4 sm:gap-0"
+                    className="px-4 sm:px-5 py-3.5 hover:bg-white/[0.02] transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                   >
-                    <div className="flex items-center justify-between w-full sm:w-auto">
-                      <div className="flex items-center gap-3 md:gap-4">
-                        <div
-                          className="w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center shrink-0 shadow-inner backdrop-blur-md transition-transform group-hover:scale-110 duration-300"
-                          style={{
-                            backgroundColor: `${sub.color}15`,
-                            border: `1px solid ${sub.color}40`,
-                          }}
-                        >
-                          <Icon
-                            className="w-4 h-4 md:w-5 md:h-5 drop-shadow-lg"
-                            style={{ color: sub.color }}
-                          />
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="font-bold text-sm text-zinc-100 group-hover:text-white transition-colors">
-                            {sub.name}
-                          </span>
-                          <span className="text-[9px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-0.5 md:mt-1">
-                            {sub.category}
-                          </span>
-                        </div>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center shrink-0 relative">
+                        <Icon className="w-4 h-4 text-zinc-300" />
+                        <span
+                          aria-hidden="true"
+                          className="w-2 h-2 rounded-full absolute -top-0.5 -right-0.5 border border-[#111113]"
+                          style={{ backgroundColor: sub.color }}
+                        />
                       </div>
-                      <div className="flex flex-col items-end sm:hidden">
-                        <span className="font-mono font-bold text-white text-sm drop-shadow-md">
-                          R$ {sub.price.toFixed(2).replace(".", ",")}
-                        </span>
-                        <span className="text-[9px] font-bold text-amber-500/70 uppercase mt-0.5">
-                          {sub.billingCycle || "Mensal"}
-                        </span>
+
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white truncate">
+                          {sub.name}
+                        </p>
+                        <p className="text-xs text-zinc-500 truncate">
+                          {sub.category} · {sub.billingCycle}
+                        </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between sm:justify-end gap-3 md:gap-8 border-t border-white/5 pt-3 sm:border-0 sm:pt-0 w-full sm:w-auto relative">
-                      <div className="flex flex-col items-start sm:items-end">
-                        <span className="text-[9px] md:text-[10px] font-bold text-zinc-600 uppercase tracking-wider mb-1">
-                          Vencimento
-                        </span>
-                        <div
-                          className={`flex items-center gap-1.5 text-[10px] md:text-xs font-mono font-bold px-2 py-0.5 md:px-2.5 md:py-1 rounded-md border ${urgent ? "bg-red-500/10 text-red-400 border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.2)]" : "bg-black/50 text-zinc-300 border-white/10"}`}
-                        >
-                          <Calendar className="w-3 h-3 md:w-3.5 md:h-3.5" />
-                          {formatDate(sub.nextPayment)}
+                    <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 pl-13 sm:pl-0">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border tabular-nums ${
+                          urgent
+                            ? "bg-red-500/10 text-red-400 border-red-500/20"
+                            : "bg-white/[0.03] text-zinc-300 border-white/[0.06]"
+                        }`}
+                      >
+                        <Calendar className="w-3 h-3 shrink-0" />
+                        {formatDate(sub.nextPayment)}
+                      </span>
+
+                      <span className="text-sm font-semibold text-white tabular-nums min-w-[84px] text-right">
+                        {formatCurrency(sub.price)}
+                      </span>
+
+                      {isConfirmingDelete ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => deleteMutation.mutate(sub.id)}
+                            disabled={deleteMutation.isPending}
+                            className="px-2.5 py-1 rounded-lg text-xs font-medium bg-red-500/15 text-red-400 border border-red-500/25 hover:bg-red-500/25 transition-colors disabled:opacity-50"
+                          >
+                            Remover
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="px-2 py-1 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.05] transition-colors"
+                          >
+                            Cancelar
+                          </button>
                         </div>
-                      </div>
-
-                      <div className="hidden sm:flex flex-col items-end min-w-[80px]">
-                        <span className="font-mono font-bold text-white text-base drop-shadow-md">
-                          R$ {sub.price.toFixed(2).replace(".", ",")}
-                        </span>
-                        <span className="text-[10px] font-bold text-amber-500/70 uppercase mt-0.5">
-                          {sub.billingCycle || "Mensal"}
-                        </span>
-                      </div>
-
-                      {/* Botões de Ação */}
-                      <div className="flex items-center gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-all ml-0 md:ml-2">
-                        <button
-                          onClick={() => payMutation.mutate(sub.id)}
-                          disabled={payMutation.isPending}
-                          className="p-2 text-emerald-500 bg-white/5 lg:bg-transparent hover:bg-emerald-500/20 rounded-md transition-colors border border-transparent hover:border-emerald-500/30"
-                          title="Renovar ciclo"
-                        >
-                          <CheckCircle2 className="w-4 h-4 md:w-4 md:h-4" />
-                        </button>
-                        <button
-                          onClick={() => openEditModal(sub)}
-                          className="p-2 text-blue-500 bg-white/5 lg:bg-transparent hover:bg-blue-500/20 rounded-md transition-colors border border-transparent hover:border-blue-500/30"
-                          title="Editar"
-                        >
-                          <Edit3 className="w-4 h-4 md:w-4 md:h-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm(`Deseja remover ${sub.name}?`))
-                              deleteMutation.mutate(sub.id);
-                          }}
-                          disabled={deleteMutation.isPending}
-                          className="p-2 text-red-500 bg-white/5 lg:bg-transparent hover:bg-red-500/20 rounded-md transition-colors border border-transparent hover:border-red-500/30"
-                          title="Remover assinatura"
-                        >
-                          <Trash2 className="w-4 h-4 md:w-4 md:h-4" />
-                        </button>
-                      </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => payMutation.mutate(sub.id)}
+                            disabled={payMutation.isPending}
+                            title="Renovar ciclo"
+                            aria-label={`Renovar ${sub.name}`}
+                            className="p-2 rounded-lg text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(sub)}
+                            title="Editar assinatura"
+                            aria-label={`Editar ${sub.name}`}
+                            className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(sub.id)}
+                            title="Remover assinatura"
+                            aria-label={`Remover ${sub.name}`}
+                            className="p-2 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  </li>
                 );
-              })
-            )}
-          </div>
-        </div>
+              })}
+            </ul>
+          )}
+        </SurfacePanel>
 
-        {/* GRÁFICO DE DISTRIBUIÇÃO */}
-        <div className="lg:col-span-4 bg-[#121214]/80 backdrop-blur-xl border border-white/5 border-t-orange-500/50 rounded-3xl p-4 md:p-8 shadow-2xl flex flex-col h-full min-h-[380px] md:min-h-[400px] relative overflow-hidden group">
-          <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-orange-500/10 blur-[80px] rounded-full pointer-events-none transition-opacity group-hover:opacity-100 opacity-50" />
-          <PieChartIcon
-            className="absolute -bottom-10 -right-10 w-48 h-48 md:w-64 md:h-64 text-white opacity-[0.015] pointer-events-none -rotate-12"
-            strokeWidth={1}
-          />
-          <h2 className="text-lg md:text-xl font-bold text-white mb-1 relative z-10">
-            Distribuição
-          </h2>
-          <p className="text-[10px] md:text-xs font-bold text-zinc-500 uppercase tracking-widest mb-6 md:mb-8 relative z-10">
-            Gastos por Categoria
-          </p>
-
-          <div className="flex-grow w-full relative z-10 flex items-center justify-center min-h-[200px] md:min-h-[210px]">
-            {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Tooltip
-                    content={<CustomTooltip />}
-                    cursor={{ fill: "transparent" }}
-                  />
-                  <Pie
-                    data={chartData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={70}
-                    outerRadius={95}
-                    paddingAngle={6}
-                    dataKey="value"
-                    stroke="none"
-                    cornerRadius={10}
-                    animationDuration={1500}
-                  >
-                    {chartData.map((entry: any, index: number) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={entry.color}
-                        className="hover:opacity-80 transition-opacity duration-300 outline-none drop-shadow-xl"
-                      />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="text-zinc-600 text-xs md:text-sm font-medium bg-black/20 px-5 py-3 md:px-6 md:py-4 rounded-xl border border-white/5 border-dashed">
-                Sem dados para o gráfico.
+        {/* CATEGORY DISTRIBUTION CHART */}
+        <SurfacePanel
+          className="lg:col-span-4"
+          title="Distribuição por Categoria"
+          icon={<PieChartIcon className="w-4 h-4 text-cyan-400" />}
+          accent="cyan"
+        >
+          {chartData.length === 0 ? (
+            <div className="py-12 text-center text-xs text-zinc-500">
+              Sem dados suficientes para exibir o gráfico.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-5">
+              <div className="w-full h-[210px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Tooltip
+                      content={<CustomTooltip />}
+                      cursor={{ fill: "transparent" }}
+                    />
+                    <Pie
+                      data={chartData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={62}
+                      outerRadius={86}
+                      paddingAngle={4}
+                      dataKey="value"
+                      stroke="none"
+                      cornerRadius={6}
+                    >
+                      {chartData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
-            )}
-          </div>
 
-          <div className="flex flex-col gap-2 mt-6 relative z-10">
-            {chartData.map((item: any) => (
-              <div
-                key={item.name}
-                className="flex items-center justify-between p-2.5 md:p-3 rounded-xl bg-black/20 hover:bg-black/40 border border-white/5 transition-colors"
-              >
-                <div className="flex items-center gap-2 md:gap-3">
-                  <div
-                    className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full"
-                    style={{
-                      backgroundColor: item.color,
-                      boxShadow: `0 0 10px ${item.color}60`,
-                    }}
-                  />
-                  <span className="text-[10px] md:text-xs font-bold text-zinc-300 uppercase tracking-wider">
-                    {item.name}
-                  </span>
-                </div>
-                <span className="font-mono text-xs md:text-sm font-bold text-white drop-shadow-md">
-                  R$ {item.value.toFixed(2).replace(".", ",")}
-                </span>
+              <div className="space-y-2">
+                {chartData.map((item) => {
+                  const pct =
+                    chartTotal > 0
+                      ? Math.round((item.value / chartTotal) * 100)
+                      : 0;
+                  return (
+                    <div
+                      key={item.name}
+                      className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.05]"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: item.color }}
+                        />
+                        <span className="text-xs font-medium text-zinc-300 truncate">
+                          {item.name}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 tabular-nums">
+                        <span className="text-[11px] text-zinc-500">
+                          {pct}%
+                        </span>
+                        <span className="text-xs font-semibold text-white">
+                          {formatCurrency(item.value)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
+          )}
+        </SurfacePanel>
       </div>
+
+      {/* LAZY MODAL */}
+      {isModalOpen && (
+        <Suspense fallback={null}>
+          <SubscriptionModal
+            key={editingSub?.id ?? "new"}
+            isOpen={isModalOpen}
+            editingSubscription={editingSub}
+            isPending={addMutation.isPending || editMutation.isPending}
+            onClose={closeModal}
+            onSubmit={handleModalSubmit}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

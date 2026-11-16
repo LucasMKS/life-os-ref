@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { ItineraryItem, PlaceToVisit } from "@/lib/types";
-import { MapPin, ExternalLink, Calendar, Compass, Layers } from "lucide-react";
+import { sanitizeUrl } from "@/lib/security";
 
 export interface MapPoint {
   lat: number;
@@ -24,6 +24,15 @@ interface MapProps {
   filterSource?: "ALL" | "ITINERARY" | "PLACES";
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // Memory & LocalStorage Cache for Geocoding
 const geoCache: Record<string, { lat: number; lng: number } | null> = {};
 
@@ -35,8 +44,13 @@ function getCachedCoords(query: string): { lat: number; lng: number } | null | u
       const stored = localStorage.getItem(`lifeos_geo_${key}`);
       if (stored) {
         const parsed = JSON.parse(stored);
-        geoCache[key] = parsed;
-        return parsed;
+        if (
+          parsed === null ||
+          (typeof parsed?.lat === "number" && typeof parsed?.lng === "number")
+        ) {
+          geoCache[key] = parsed;
+          return parsed;
+        }
       }
     } catch {}
   }
@@ -64,13 +78,8 @@ async function geocodeQuery(
   const cached = getCachedCoords(cleanRaw);
   if (cached !== undefined) return cached;
 
-  // Build candidate queries in priority order
-  const candidates: string[] = [];
+  const candidates: string[] = [cleanRaw];
 
-  // Candidate 1: Raw query
-  candidates.push(cleanRaw);
-
-  // Check if query contains Brazilian CEP format: 12345-678 or 12345678
   const cepMatch = cleanRaw.match(/\b(\d{5})-?(\d{3})\b/);
   if (cepMatch) {
     const cepDigits = cepMatch[1] + cepMatch[2];
@@ -89,8 +98,10 @@ async function geocodeQuery(
     } catch {}
   }
 
-  // Candidate 2: Address without CEP and expanding abbreviations (R. -> Rua, Av. -> Avenida)
-  const withoutCep = cleanRaw.replace(/\b\d{5}-?\d{3}\b/g, "").replace(/,\s*,/g, ",").trim();
+  const withoutCep = cleanRaw
+    .replace(/\b\d{5}-?\d{3}\b/g, "")
+    .replace(/,\s*,/g, ",")
+    .trim();
   const expanded = withoutCep
     .replace(/\bR\.\s*/gi, "Rua ")
     .replace(/\bAv\.\s*/gi, "Avenida ");
@@ -99,7 +110,6 @@ async function geocodeQuery(
     candidates.push(expanded);
   }
 
-  // Candidate 3: Extract neighborhood from hyphen pattern: "R. Marcílio Dias - Muquiçaba, Guarapari..."
   const hyphenParts = withoutCep.split(/[-–—]/);
   if (hyphenParts.length > 1) {
     const afterHyphen = hyphenParts.slice(1).join(" ").trim();
@@ -108,15 +118,12 @@ async function geocodeQuery(
     }
   }
 
-  // Candidate 4: Destination appended
   if (destination && !cleanRaw.toLowerCase().includes(destination.toLowerCase())) {
     candidates.push(`${withoutCep}, ${destination}`);
   }
 
-  // Deduplicate candidates
   const uniqueCandidates = Array.from(new Set(candidates)).filter(Boolean);
 
-  // Try each candidate with Nominatim
   for (const candidate of uniqueCandidates) {
     try {
       const res = await fetch(
@@ -128,36 +135,34 @@ async function geocodeQuery(
         }
       );
       const data = await res.json();
-      if (data && data.length > 0) {
-        const coords = {
-          lat: parseFloat(data[0].lat),
-          lng: parseFloat(data[0].lon),
-        };
-        setCachedCoords(cleanRaw, coords);
-        return coords;
+      if (Array.isArray(data) && data.length > 0) {
+        const lat = parseFloat(data[0].lat);
+        const lng = parseFloat(data[0].lon);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          const coords = { lat, lng };
+          setCachedCoords(cleanRaw, coords);
+          return coords;
+        }
       }
-    } catch (e) {
-      console.warn("Geocoding candidate failed for:", candidate, e);
-    }
+    } catch {}
 
-    // Small polite throttle for Nominatim rate limits
     await new Promise((resolve) => setTimeout(resolve, 350));
   }
 
-  // Fallback: destination center
   if (destination) {
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(destination)}&limit=1`
       );
       const data = await res.json();
-      if (data && data.length > 0) {
-        const coords = {
-          lat: parseFloat(data[0].lat),
-          lng: parseFloat(data[0].lon),
-        };
-        setCachedCoords(cleanRaw, coords);
-        return coords;
+      if (Array.isArray(data) && data.length > 0) {
+        const lat = parseFloat(data[0].lat);
+        const lng = parseFloat(data[0].lon);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          const coords = { lat, lng };
+          setCachedCoords(cleanRaw, coords);
+          return coords;
+        }
       }
     } catch {}
   }
@@ -178,14 +183,24 @@ export default function TravelMap({
   const [points, setPoints] = useState<MapPoint[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Format date and time for itinerary occurrences
-  const formatEventDate = (dateTimeStr: string) => {
+  const formatEventDate = (dateTimeStr?: string) => {
+    if (!dateTimeStr) return { label: "Atividade agendada", dateStr: "", timeStr: "" };
     try {
       const date = new Date(dateTimeStr);
+      if (isNaN(date.getTime())) {
+        return { label: "Atividade agendada", dateStr: "", timeStr: "" };
+      }
       const dayOfWeek = date.toLocaleDateString("pt-BR", { weekday: "short" });
-      const dayAndMonth = date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-      const time = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-      const capitalizedDay = dayOfWeek.charAt(0).toUpperCase() + dayOfWeek.slice(1).replace(".", "");
+      const dayAndMonth = date.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+      });
+      const time = date.toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const capitalizedDay =
+        dayOfWeek.charAt(0).toUpperCase() + dayOfWeek.slice(1).replace(".", "");
       return {
         label: `${capitalizedDay}, ${dayAndMonth} às ${time}`,
         dateStr: `${capitalizedDay}, ${dayAndMonth}`,
@@ -196,7 +211,6 @@ export default function TravelMap({
     }
   };
 
-  // Resolve all locations for Itinerary and Places
   useEffect(() => {
     let active = true;
 
@@ -204,12 +218,16 @@ export default function TravelMap({
       setLoading(true);
       const rawPoints: MapPoint[] = [];
 
-      // 1. Process Itinerary Items
-      for (const item of items) {
+      for (const item of items || []) {
         if (!active) break;
         const eventTime = formatEventDate(item.dateTime);
 
-        if (item.latitude && item.longitude) {
+        if (
+          typeof item.latitude === "number" &&
+          typeof item.longitude === "number" &&
+          !isNaN(item.latitude) &&
+          !isNaN(item.longitude)
+        ) {
           rawPoints.push({
             lat: item.latitude,
             lng: item.longitude,
@@ -239,30 +257,41 @@ export default function TravelMap({
         }
       }
 
-      // 2. Process Places to Visit (Wishlist)
-      for (const place of places) {
+      for (const place of places || []) {
         if (!active) break;
-        const query = place.address || (place.neighborhood ? `${place.neighborhood}, ${destination}` : `${place.name}, ${destination}`);
+        const query =
+          place.address ||
+          (place.neighborhood
+            ? `${place.neighborhood}, ${destination}`
+            : `${place.name}, ${destination}`);
         if (query) {
           const coords = await geocodeQuery(query, destination);
           if (coords && active) {
+            const safeCustomUrl = sanitizeUrl(place.mapUrl);
             rawPoints.push({
               lat: coords.lat,
               lng: coords.lng,
-              title: place.name,
+              title: place.name || "Lugar",
               address: place.address || place.neighborhood,
               category: place.category,
               source: "place",
-              events: [{ label: `Lugar para Ir (${place.priority === "MUST_VISIT" ? "Imperdível" : "Desejo"})` }],
-              googleMapsUrl: place.mapUrl || `https://www.google.com/maps/search/?api=1&query=${coords.lat},${coords.lng}`,
+              events: [
+                {
+                  label: `Lugar para Ir (${
+                    place.priority === "MUST_VISIT" ? "Imperdível" : "Desejo"
+                  })`,
+                },
+              ],
+              googleMapsUrl:
+                safeCustomUrl ||
+                `https://www.google.com/maps/search/?api=1&query=${coords.lat},${coords.lng}`,
             });
           }
         }
       }
 
-      // 3. Smart Deduplication: Merge locations that share the exact same or very close coordinates (~20m)
       const mergedPoints: MapPoint[] = [];
-      const threshold = 0.0003; // ~30 meters
+      const threshold = 0.0003;
 
       for (const pt of rawPoints) {
         const existing = mergedPoints.find(
@@ -270,7 +299,6 @@ export default function TravelMap({
         );
 
         if (existing) {
-          // Merge events list (e.g. Sábado and Quarta for the same market!)
           existing.events.push(...pt.events);
           if (existing.source !== pt.source) {
             existing.source = "both";
@@ -286,7 +314,6 @@ export default function TravelMap({
         }
       }
 
-      // 4. Fallback if no points resolved: center on general destination
       if (mergedPoints.length === 0 && destination && active) {
         const destCoords = await geocodeQuery(destination, "");
         if (destCoords && active) {
@@ -297,7 +324,9 @@ export default function TravelMap({
             address: destination,
             source: "itinerary",
             events: [{ label: "Destino da Viagem" }],
-            googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`,
+            googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+              destination
+            )}`,
           });
         }
       }
@@ -315,7 +344,6 @@ export default function TravelMap({
     };
   }, [items, places, destination]);
 
-  // Filter points according to user selection
   const visiblePoints = useMemo(() => {
     if (filterSource === "ALL") return points;
     if (filterSource === "ITINERARY") {
@@ -327,12 +355,12 @@ export default function TravelMap({
     return points;
   }, [points, filterSource]);
 
-  // Initialize or update Leaflet Map
   useEffect(() => {
-    if (!mapContainerRef.current) return;
+    const container = mapContainerRef.current;
+    if (!container) return;
 
     if (!mapRef.current) {
-      mapRef.current = L.map(mapContainerRef.current, {
+      mapRef.current = L.map(container, {
         zoomControl: true,
         attributionControl: false,
       }).setView([0, 0], 2);
@@ -344,149 +372,156 @@ export default function TravelMap({
 
     const map = mapRef.current;
 
-    // Clear old markers
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    resizeObserver.observe(container);
+
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current = [];
 
-    if (visiblePoints.length === 0) return;
+    if (visiblePoints.length > 0) {
+      const bounds = L.latLngBounds([]);
 
-    const bounds = L.latLngBounds([]);
+      visiblePoints.forEach((point) => {
+        const latLng = L.latLng(point.lat, point.lng);
+        bounds.extend(latLng);
 
-    visiblePoints.forEach((point) => {
-      const latLng = L.latLng(point.lat, point.lng);
-      bounds.extend(latLng);
+        const isMultiple = point.events.length > 1;
+        let markerBg = "#f4f4f5";
+        let markerText = "#09090b";
+        let badgeBg = "rgba(255,255,255,0.08)";
+        let badgeColor = "#e4e4e7";
+        let badgeLabel = "Roteiro";
 
-      // Distinct Marker styling based on source and count
-      const isMultiple = point.events.length > 1;
-      let markerColorClass = "bg-sky-500 shadow-sky-500/50";
-      let pingColorClass = "bg-sky-500/30";
-      let badgeLabel = "Roteiro";
+        if (point.source === "both" || isMultiple) {
+          markerBg = "#a78bfa";
+          markerText = "#09090b";
+          badgeBg = "rgba(167,139,250,0.15)";
+          badgeColor = "#c4b5fd";
+          badgeLabel = `${point.events.length} visitas agendadas`;
+        } else if (point.source === "place") {
+          markerBg = "#34d399";
+          markerText = "#09090b";
+          badgeBg = "rgba(52,211,153,0.15)";
+          badgeColor = "#6ee7b7";
+          badgeLabel = "Lugar para Ir";
+        }
 
-      if (point.source === "both" || isMultiple) {
-        markerColorClass = "bg-purple-500 shadow-purple-500/50";
-        pingColorClass = "bg-purple-500/30";
-        badgeLabel = `${point.events.length} visitas agendadas`;
-      } else if (point.source === "place") {
-        markerColorClass = "bg-amber-500 shadow-amber-500/50";
-        pingColorClass = "bg-amber-500/30";
-        badgeLabel = "Lugar para Ir";
-      }
-
-      const customIcon = L.divIcon({
-        html: `
-          <div class="relative flex items-center justify-center cursor-pointer">
-            <div class="absolute w-8 h-8 rounded-full ${pingColorClass} animate-ping opacity-75"></div>
-            <div class="relative w-6 h-6 ${markerColorClass} rounded-full border-2 border-[#09090b] flex items-center justify-center shadow-lg font-bold text-[10px] text-black">
-              ${isMultiple ? point.events.length : "•"}
+        const customIcon = L.divIcon({
+          html: `
+            <div style="width:24px;height:24px;border-radius:9999px;background:${markerBg};color:${markerText};border:2px solid #09090b;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:10px;box-shadow:0 2px 6px rgba(0,0,0,0.45);cursor:pointer;">
+              ${isMultiple ? escapeHtml(String(point.events.length)) : "•"}
             </div>
-          </div>
-        `,
-        className: "custom-travel-marker",
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-      });
-
-      // Events / Occurrences list in popup
-      const eventsHtml = point.events
-        .map(
-          (e) => `
-            <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; color: #d4d4d8;">
-              <span style="color: #38bdf8;">🗓️</span>
-              <span>${e.label}</span>
-            </div>
-          `
-        )
-        .join("");
-
-      const popupContent = `
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 8px 4px; color: #fafafa; min-width: 200px; max-width: 280px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-            <span style="font-weight: 800; font-size: 10px; background: ${
-              point.source === "place" ? "#78350f" : "#0c4a6e"
-            }; color: ${
-              point.source === "place" ? "#fde047" : "#38bdf8"
-            }; padding: 2px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px;">
-              ${badgeLabel}
-            </span>
-          </div>
-
-          <h4 style="margin: 0 0 4px 0; font-weight: 700; font-size: 14px; color: #ffffff; line-height: 1.3;">
-            ${point.title}
-          </h4>
-
-          ${
-            point.address
-              ? `<p style="margin: 0 0 6px 0; font-size: 11px; color: #a1a1aa; line-height: 1.4;">
-                  📍 ${point.address}
-                 </p>`
-              : ""
-          }
-
-          <div style="background: rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 6px 8px; margin: 8px 0;">
-            ${eventsHtml}
-          </div>
-
-          ${
-            point.googleMapsUrl
-              ? `
-                <a href="${point.googleMapsUrl}" target="_blank" rel="noopener noreferrer"
-                   style="display: block; text-align: center; background: #38bdf8; color: #000; font-weight: 800; font-size: 11px; padding: 6px 10px; border-radius: 8px; text-decoration: none; margin-top: 8px;">
-                  Abrir no Google Maps ↗
-                </a>
-              `
-              : ""
-          }
-        </div>
-      `;
-
-      const marker = L.marker(latLng, { icon: customIcon })
-        .addTo(map)
-        .bindPopup(popupContent, {
-          className: "custom-leaflet-dark-popup",
+          `,
+          className: "custom-travel-marker",
+          iconSize: [24, 24],
+          iconAnchor: [12, 12],
         });
 
-      markersRef.current.push(marker);
-    });
+        const eventsHtml = point.events
+          .map(
+            (e) => `
+              <div style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:#d4d4d8;">
+                <span>•</span>
+                <span>${escapeHtml(e.label || "")}</span>
+              </div>
+            `
+          )
+          .join("");
 
-    // Fit map view bounds
-    if (visiblePoints.length > 1) {
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
-    } else if (visiblePoints.length === 1) {
-      map.setView([visiblePoints[0].lat, visiblePoints[0].lng], 14);
+        const safeGoogleMapsUrl = sanitizeUrl(point.googleMapsUrl);
+
+        const popupContent = `
+          <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:6px 4px;color:#fafafa;min-width:190px;max-width:260px;">
+            <div style="margin-bottom:6px;">
+              <span style="font-weight:700;font-size:10px;background:${badgeBg};color:${badgeColor};padding:2px 8px;border-radius:6px;text-transform:uppercase;letter-spacing:0.4px;">
+                ${escapeHtml(badgeLabel)}
+              </span>
+            </div>
+
+            <h4 style="margin:0 0 4px 0;font-weight:700;font-size:13px;color:#ffffff;line-height:1.3;">
+              ${escapeHtml(point.title || "")}
+            </h4>
+
+            ${
+              point.address
+                ? `<p style="margin:0 0 6px 0;font-size:11px;color:#a1a1aa;line-height:1.4;">
+                    ${escapeHtml(point.address)}
+                   </p>`
+                : ""
+            }
+
+            <div style="background:rgba(255,255,255,0.05);border-radius:8px;padding:6px 8px;margin:8px 0;">
+              ${eventsHtml}
+            </div>
+
+            ${
+              safeGoogleMapsUrl
+                ? `
+                  <a href="${escapeHtml(safeGoogleMapsUrl)}" target="_blank" rel="noopener noreferrer"
+                     style="display:block;text-align:center;background:#f4f4f5;color:#09090b;font-weight:700;font-size:11px;padding:6px 10px;border-radius:8px;text-decoration:none;margin-top:8px;">
+                    Abrir no Google Maps ↗
+                  </a>
+                `
+                : ""
+            }
+          </div>
+        `;
+
+        const marker = L.marker(latLng, { icon: customIcon })
+          .addTo(map)
+          .bindPopup(popupContent, {
+            className: "custom-leaflet-dark-popup",
+          });
+
+        markersRef.current.push(marker);
+      });
+
+      if (visiblePoints.length > 1) {
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+      } else if (visiblePoints.length === 1) {
+        map.setView([visiblePoints[0].lat, visiblePoints[0].lng], 14);
+      }
     }
+
+    return () => {
+      resizeObserver.disconnect();
+    };
   }, [visiblePoints]);
 
   return (
-    <div className="w-full h-full rounded-3xl overflow-hidden border border-white/10 bg-zinc-950 relative shadow-inner flex flex-col">
-      <div ref={mapContainerRef} className="w-full h-full" style={{ minHeight: "500px" }} />
+    <div className="w-full h-full rounded-2xl overflow-hidden border border-white/[0.06] bg-[#09090b] relative flex flex-col">
+      <div ref={mapContainerRef} className="w-full h-full min-h-[360px] sm:min-h-[500px]" />
 
       {/* Loading Overlay */}
       {loading && (
-        <div className="absolute top-4 left-4 z-[1000] bg-zinc-900/90 backdrop-blur-md border border-white/10 px-3.5 py-2 rounded-2xl flex items-center gap-2.5 text-xs text-white shadow-xl">
-          <div className="w-3.5 h-3.5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
-          <span>Localizando pontos e endereços no mapa...</span>
+        <div className="absolute top-3 left-3 z-[1000] bg-[#111113]/95 border border-white/[0.08] px-3.5 py-2 rounded-xl flex items-center gap-2.5 text-xs text-zinc-200 shadow-lg">
+          <div className="w-3.5 h-3.5 border-2 border-zinc-300 border-t-transparent rounded-full animate-spin" />
+          <span>Localizando pontos no mapa...</span>
         </div>
       )}
 
       {/* Floating Info Bottom Bar */}
-      <div className="absolute bottom-3 left-3 right-3 z-[1000] bg-zinc-900/90 backdrop-blur-md border border-white/10 px-4 py-2.5 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xl">
-        <div className="flex items-center gap-4 text-[11px] text-zinc-300">
+      <div className="absolute bottom-3 left-3 right-3 z-[1000] bg-[#111113]/95 border border-white/[0.08] px-3.5 py-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2.5 text-xs shadow-lg">
+        <div className="flex flex-wrap items-center gap-3.5 text-[11px] text-zinc-300">
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block shadow-sm shadow-sky-400/50" />
-            <span>Roteiro & Atividades</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-zinc-100 inline-block" />
+            <span>Roteiro</span>
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block shadow-sm shadow-amber-400/50" />
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />
             <span>Lugares para Ir</span>
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-purple-400 inline-block shadow-sm shadow-purple-400/50" />
-            <span>Múltiplas Visitas / Recorrente</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-violet-400 inline-block" />
+            <span>Múltiplas Visitas</span>
           </span>
         </div>
 
         <div className="text-[11px] font-mono text-zinc-400">
-          {visiblePoints.length} {visiblePoints.length === 1 ? "local demarcado" : "locais demarcados"}
+          {visiblePoints.length}{" "}
+          {visiblePoints.length === 1 ? "local demarcado" : "locais demarcados"}
         </div>
       </div>
     </div>

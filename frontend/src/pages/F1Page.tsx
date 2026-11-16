@@ -1,49 +1,27 @@
+import { Flag } from "lucide-react";
 import { F1Dashboard } from "@/components/f1/f1-dashboard";
-import { Navbar } from "@/components/navbar";
-import { Flag, Sparkles } from "lucide-react";
+import { PageHeader, PageShell } from "@/components/ui/page-shell";
 
 export default function F1Page() {
+  const season = new Date().getFullYear();
+
   return (
-    <main className="min-h-screen flex flex-col relative bg-[#09090b] text-zinc-100 selection:bg-red-500/20 overflow-x-hidden">
-      {/* Background Decorative Elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-red-600/5 rounded-full blur-[140px]" />
-        <div className="absolute top-[20%] right-[-10%] w-[35%] h-[35%] bg-rose-600/5 rounded-full blur-[140px]" />
+    <PageShell maxWidth="7xl">
+      <PageHeader
+        accent="red"
+        eyebrow="Paddock"
+        icon={<Flag className="w-3.5 h-3.5 text-red-400" />}
+        title="Fórmula 1"
+        subtitle="Calendário da temporada, horários das sessões e classificação de pilotos e construtores."
+        badge={
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/25 text-[11px] font-semibold text-red-300 tabular-nums">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+            Temporada {season}
+          </span>
+        }
+      />
 
-        {/* Fine grid pattern overlay */}
-        <div className="absolute inset-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:20px_20px] pointer-events-none" />
-      </div>
-
-      <Navbar />
-
-      <div className="z-10 w-full max-w-[1500px] mx-auto mt-4 md:mt-10 px-4 md:px-8 pb-16 md:pb-24">
-        {/* HEADER SECTION */}
-        <header className="mb-6 md:mb-10 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div className="animate-in slide-in-from-left-6 fade-in duration-500 ease-out">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-red-500/20 to-rose-500/20 border border-white/10 flex items-center justify-center text-red-400 shadow-lg">
-                <Flag className="w-5 h-5" />
-              </div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl md:text-4xl font-black tracking-tight text-white">
-                  Fórmula{" "}
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-rose-400">
-                    1
-                  </span>
-                </h1>
-                <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[9px] font-bold text-zinc-400 uppercase tracking-widest">
-                  <Sparkles className="w-2.5 h-2.5 text-red-400" /> PADDOCK
-                </div>
-              </div>
-            </div>
-            <p className="text-zinc-400 text-xs md:text-sm font-medium max-w-xl">
-              Calendário da temporada, horários das sessões e classificação de pilotos e construtores.
-            </p>
-          </div>
-        </header>
-
-        <F1Dashboard />
-      </div>
-    </main>
+      <F1Dashboard />
+    </PageShell>
   );
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckSquare,
   Plus,
@@ -21,6 +20,7 @@ import {
   Zap,
 } from "lucide-react";
 import { TripTask, TripTaskCategory } from "@/lib/types";
+import { FilterPill, EmptyState } from "@/components/ui/page-shell";
 
 interface TripTasksTabProps {
   tasks: TripTask[];
@@ -29,7 +29,6 @@ interface TripTasksTabProps {
 
 export function TripTasksTab({ tasks, onSaveTasks }: TripTasksTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterCategory, setFilterCategory] = useState<string>("ALL");
   const [filterStatus, setFilterStatus] = useState<"ALL" | "PENDING" | "COMPLETED">("ALL");
 
   // Modal State
@@ -42,21 +41,21 @@ export function TripTasksTab({ tasks, onSaveTasks }: TripTasksTabProps) {
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
 
-  const quickSuggestions: Array<{ title: string; category: TripTaskCategory; icon: string }> = [
-    { title: "Conseguir cartão de transporte (ônibus/metrô)", category: "TRANSPORT", icon: "🚌" },
-    { title: "Comprar chip internacional eSIM", category: "GENERAL", icon: "📶" },
-    { title: "Contratar seguro viagem", category: "HEALTH_INSURANCE", icon: "🛡️" },
-    { title: "Habilitar cartões / Comprar moeda estrangeira", category: "FINANCES", icon: "💳" },
-    { title: "Conferir validade do passaporte & documentos", category: "DOCUMENTS", icon: "🛂" },
-    { title: "Comprar adaptador de tomada universal", category: "GENERAL", icon: "🔌" },
-    { title: "Fazer reserva de ingressos concorridos", category: "BOOKINGS", icon: "🎟️" },
-    { title: "Fazer check-in online do voo (24h antes)", category: "TRANSPORT", icon: "✈️" },
+  const quickSuggestions: Array<{ title: string; category: TripTaskCategory }> = [
+    { title: "Conseguir cartão de transporte (ônibus/metrô)", category: "TRANSPORT" },
+    { title: "Comprar chip internacional eSIM", category: "GENERAL" },
+    { title: "Contratar seguro viagem", category: "HEALTH_INSURANCE" },
+    { title: "Habilitar cartões / Comprar moeda estrangeira", category: "FINANCES" },
+    { title: "Conferir validade do passaporte & documentos", category: "DOCUMENTS" },
+    { title: "Comprar adaptador de tomada universal", category: "GENERAL" },
+    { title: "Fazer reserva de ingressos concorridos", category: "BOOKINGS" },
+    { title: "Fazer check-in online do voo (24h antes)", category: "TRANSPORT" },
   ];
 
   const handleOpenModal = (task?: TripTask | null) => {
     if (task) {
       setEditingTask(task);
-      setTitle(task.title);
+      setTitle(task.title || "");
       setCategory(task.category || "GENERAL");
       setDueDate(task.dueDate || "");
       setNotes(task.notes || "");
@@ -101,9 +100,11 @@ export function TripTasksTab({ tasks, onSaveTasks }: TripTasksTabProps) {
     setIsModalOpen(false);
   };
 
-  const handleAddQuickSuggestion = async (suggestion: { title: string; category: TripTaskCategory }) => {
-    // Avoid duplicate title if already present
-    if (tasks.some((t) => t.title.toLowerCase() === suggestion.title.toLowerCase())) {
+  const handleAddQuickSuggestion = async (suggestion: {
+    title: string;
+    category: TripTaskCategory;
+  }) => {
+    if (tasks.some((t) => (t.title || "").toLowerCase() === suggestion.title.toLowerCase())) {
       return;
     }
 
@@ -131,29 +132,27 @@ export function TripTasksTab({ tasks, onSaveTasks }: TripTasksTabProps) {
   const getCategoryConfig = (cat: TripTaskCategory) => {
     switch (cat) {
       case "TRANSPORT":
-        return { label: "Transporte", icon: Bus, color: "text-sky-400 bg-sky-500/10 border-sky-500/20" };
+        return { label: "Transporte", icon: Bus, color: "text-zinc-200 bg-white/[0.06] border-white/[0.1]" };
       case "DOCUMENTS":
-        return { label: "Documentos", icon: FileCheck, color: "text-amber-400 bg-amber-500/10 border-amber-500/20" };
+        return { label: "Documentos", icon: FileCheck, color: "text-amber-300 bg-amber-500/10 border-amber-500/20" };
       case "FINANCES":
         return { label: "Finanças", icon: CreditCard, color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" };
       case "HEALTH_INSURANCE":
-        return { label: "Saúde & Seguro", icon: Shield, color: "text-rose-400 bg-rose-500/10 border-rose-500/20" };
+        return { label: "Saúde & Seguro", icon: Shield, color: "text-rose-300 bg-rose-500/10 border-rose-500/20" };
       case "BOOKINGS":
-        return { label: "Reservas", icon: Ticket, color: "text-purple-400 bg-purple-500/10 border-purple-500/20" };
+        return { label: "Reservas", icon: Ticket, color: "text-purple-300 bg-purple-500/10 border-purple-500/20" };
       default:
-        return { label: "Geral", icon: Sparkles, color: "text-zinc-400 bg-white/5 border-white/10" };
+        return { label: "Geral", icon: Sparkles, color: "text-zinc-300 bg-white/[0.05] border-white/[0.08]" };
     }
   };
 
-  // Filtered tasks
   const filteredTasks = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
     return tasks.filter((t) => {
       const matchesSearch =
-        t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.notes?.toLowerCase().includes(searchTerm.toLowerCase());
-
-      const matchesCategory =
-        filterCategory === "ALL" || t.category === filterCategory;
+        !q ||
+        (t.title || "").toLowerCase().includes(q) ||
+        (t.notes || "").toLowerCase().includes(q);
 
       const matchesStatus =
         filterStatus === "ALL"
@@ -162,60 +161,61 @@ export function TripTasksTab({ tasks, onSaveTasks }: TripTasksTabProps) {
           ? t.completed
           : !t.completed;
 
-      return matchesSearch && matchesCategory && matchesStatus;
+      return matchesSearch && matchesStatus;
     });
-  }, [tasks, searchTerm, filterCategory, filterStatus]);
+  }, [tasks, searchTerm, filterStatus]);
 
   const completedCount = tasks.filter((t) => t.completed).length;
   const progressPercent = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Top Header & Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <CheckSquare className="text-purple-400" size={20} />
-            O Que Devo Fazer (Tarefas & Preparativos)
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <CheckSquare className="text-zinc-400" size={18} />
+            Tarefas & Preparativos
           </h2>
           <p className="text-xs text-zinc-400 mt-0.5">
-            Pendências cruciais antes e durante a viagem: transporte, câmbio, seguro, chips e reservas.
+            Pendências antes e durante a viagem: transporte, câmbio, seguro, chips e reservas.
           </p>
         </div>
 
         <button
+          type="button"
           onClick={() => handleOpenModal(null)}
-          className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-purple-900/30 cursor-pointer self-start sm:self-auto"
+          className="inline-flex items-center justify-center gap-1.5 bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-xs px-4 py-2.5 rounded-xl transition-colors cursor-pointer self-start sm:self-auto"
         >
-          <Plus size={15} strokeWidth={2.5} />
-          Nova Tarefa
+          <Plus size={15} strokeWidth={2.2} />
+          <span>Nova Tarefa</span>
         </button>
       </div>
 
       {/* Progress Card */}
-      <div className="rounded-2xl border border-white/5 bg-zinc-900/40 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="rounded-xl border border-white/[0.06] bg-[#09090b] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-1">
-          <div className="text-sm font-bold text-white flex items-center gap-2">
+          <div className="text-sm font-semibold text-white flex items-center gap-2 flex-wrap">
             <span>Progresso das Pendências</span>
-            <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
+            <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-white/[0.06] text-zinc-200 border border-white/[0.08]">
               {completedCount} de {tasks.length} concluídas
             </span>
           </div>
           <p className="text-xs text-zinc-400">
             {tasks.length - completedCount === 0 && tasks.length > 0
-              ? "Tudo pronto para a viagem! Nenhuma pendência restante 🎉"
+              ? "Tudo pronto para a viagem."
               : `Restam ${tasks.length - completedCount} pendências para resolver.`}
           </p>
         </div>
 
         <div className="w-full sm:w-64 space-y-1.5">
-          <div className="flex justify-between text-xs font-mono font-bold text-zinc-400">
+          <div className="flex justify-between text-xs font-mono font-semibold text-zinc-400">
             <span>Concluído</span>
-            <span className="text-purple-400">{progressPercent}%</span>
+            <span className="text-zinc-100">{progressPercent}%</span>
           </div>
-          <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+          <div className="w-full bg-white/[0.08] rounded-full h-1.5 overflow-hidden">
             <div
-              className="bg-gradient-to-r from-purple-500 to-sky-400 h-full rounded-full transition-all duration-300"
+              className="bg-emerald-400 h-full rounded-full transition-all duration-300"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
@@ -223,30 +223,30 @@ export function TripTasksTab({ tasks, onSaveTasks }: TripTasksTabProps) {
       </div>
 
       {/* Quick Suggestions Box */}
-      <div className="rounded-2xl border border-purple-500/20 bg-purple-950/20 p-4 space-y-3">
-        <div className="flex items-center gap-1.5 text-xs font-bold text-purple-300 uppercase tracking-wider">
-          <Zap size={13} className="text-purple-400" />
-          <span>Sugestões Rápidas de Viagem (Clique para Adicionar)</span>
+      <div className="rounded-xl border border-white/[0.06] bg-[#09090b] p-4 space-y-2.5">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+          <Zap size={13} className="text-zinc-400" />
+          <span>Sugestões Rápidas (Clique para Adicionar)</span>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           {quickSuggestions.map((sug, i) => {
             const alreadyAdded = tasks.some(
-              (t) => t.title.toLowerCase() === sug.title.toLowerCase()
+              (t) => (t.title || "").toLowerCase() === sug.title.toLowerCase()
             );
             return (
               <button
                 key={i}
+                type="button"
                 disabled={alreadyAdded}
                 onClick={() => handleAddQuickSuggestion(sug)}
-                className={`text-xs px-3 py-1.5 rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors flex items-center gap-1.5 cursor-pointer ${
                   alreadyAdded
-                    ? "bg-white/5 border-white/5 text-zinc-500 cursor-not-allowed line-through"
-                    : "bg-white/5 hover:bg-purple-500/20 border-white/10 hover:border-purple-500/40 text-zinc-300 hover:text-white"
+                    ? "bg-white/[0.02] border-transparent text-zinc-600 cursor-not-allowed line-through"
+                    : "bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300 hover:text-white"
                 }`}
               >
-                <span>{sug.icon}</span>
                 <span>{sug.title}</span>
-                {!alreadyAdded && <Plus size={11} className="text-purple-400" />}
+                {!alreadyAdded && <Plus size={11} />}
               </button>
             );
           })}
@@ -254,108 +254,89 @@ export function TripTasksTab({ tasks, onSaveTasks }: TripTasksTabProps) {
       </div>
 
       {/* Filters Bar */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-zinc-900/40 border border-white/5 p-3 rounded-2xl">
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-[#09090b] border border-white/[0.06] p-3 rounded-xl">
         <div className="relative flex-1">
-          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
           <input
             type="text"
             placeholder="Buscar tarefa..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-white/5 border border-white/5 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 transition-colors"
+            className="w-full bg-[#111113] border border-white/[0.06] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 transition-colors"
           />
         </div>
 
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setFilterStatus("ALL")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
-              filterStatus === "ALL"
-                ? "bg-purple-600 text-white font-bold"
-                : "bg-white/5 text-zinc-400 hover:text-white"
-            }`}
-          >
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 md:pb-0">
+          <FilterPill active={filterStatus === "ALL"} onClick={() => setFilterStatus("ALL")}>
             Todas ({tasks.length})
-          </button>
-          <button
+          </FilterPill>
+          <FilterPill
+            active={filterStatus === "PENDING"}
             onClick={() => setFilterStatus("PENDING")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
-              filterStatus === "PENDING"
-                ? "bg-purple-600 text-white font-bold"
-                : "bg-white/5 text-zinc-400 hover:text-white"
-            }`}
           >
             Pendentes ({tasks.length - completedCount})
-          </button>
-          <button
+          </FilterPill>
+          <FilterPill
+            active={filterStatus === "COMPLETED"}
             onClick={() => setFilterStatus("COMPLETED")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
-              filterStatus === "COMPLETED"
-                ? "bg-purple-600 text-white font-bold"
-                : "bg-white/5 text-zinc-400 hover:text-white"
-            }`}
           >
             Concluídas ({completedCount})
-          </button>
+          </FilterPill>
         </div>
       </div>
 
       {/* Tasks List */}
       {filteredTasks.length === 0 ? (
-        <div className="text-center py-16 px-4 bg-zinc-900/20 rounded-3xl border border-dashed border-white/10 max-w-lg mx-auto">
-          <CheckSquare className="text-zinc-500 w-10 h-10 mx-auto mb-3 opacity-60" />
-          <h4 className="text-sm font-bold text-zinc-300">Nenhuma tarefa encontrada</h4>
-          <p className="text-zinc-500 text-xs mt-1">
-            {tasks.length === 0
-              ? "Use as sugestões rápidas acima ou adicione suas tarefas personalizadas para planejar a viagem."
-              : "Nenhuma tarefa corresponde aos filtros aplicados."}
-          </p>
-        </div>
+        <EmptyState
+          icon={<CheckSquare size={24} />}
+          title="Nenhuma tarefa encontrada"
+          description={
+            tasks.length === 0
+              ? "Use as sugestões rápidas acima ou adicione suas tarefas personalizadas."
+              : "Nenhuma tarefa corresponde aos filtros aplicados."
+          }
+        />
       ) : (
         <div className="space-y-2.5">
-          {filteredTasks.map((task, idx) => {
+          {filteredTasks.map((task) => {
             const cat = getCategoryConfig(task.category);
             const CatIcon = cat.icon;
 
             return (
-              <motion.div
+              <div
                 key={task.id}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.02 }}
-                className={`group flex items-start justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border transition-all ${
+                className={`group flex items-start justify-between gap-3 p-3.5 sm:p-4 rounded-xl border transition-colors ${
                   task.completed
-                    ? "bg-zinc-950/40 border-white/5 opacity-60"
-                    : "bg-zinc-900/40 border-white/10 hover:border-purple-500/30 hover:bg-zinc-900/60 shadow-sm"
+                    ? "bg-[#09090b] border-white/[0.04] opacity-60"
+                    : "bg-[#09090b] border-white/[0.06] hover:border-white/[0.14]"
                 }`}
               >
                 <div className="flex items-start gap-3 flex-1 min-w-0">
                   <button
+                    type="button"
                     onClick={() => handleToggleTask(task.id)}
                     className={`mt-0.5 cursor-pointer transition-colors ${
                       task.completed
-                        ? "text-purple-400 hover:text-zinc-400"
-                        : "text-zinc-500 hover:text-purple-400"
+                        ? "text-emerald-400 hover:text-zinc-400"
+                        : "text-zinc-500 hover:text-zinc-200"
                     }`}
                     title={task.completed ? "Desmarcar tarefa" : "Concluir tarefa"}
                   >
-                    {task.completed ? (
-                      <CheckCircle2 size={19} />
-                    ) : (
-                      <Circle size={19} />
-                    )}
+                    {task.completed ? <CheckCircle2 size={18} /> : <Circle size={18} />}
                   </button>
 
                   <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={`text-[10px] font-semibold py-0.5 px-2 rounded-lg border flex items-center gap-1 ${cat.color}`}>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={`text-[10px] font-medium py-0.5 px-2 rounded-md border flex items-center gap-1 ${cat.color}`}
+                      >
                         <CatIcon size={10} />
                         {cat.label}
                       </span>
 
                       {task.dueDate && (
-                        <span className="text-[10px] text-zinc-400 bg-white/5 border border-white/5 py-0.5 px-2 rounded-lg flex items-center gap-1">
-                          <Calendar size={10} className="text-purple-400" />
+                        <span className="text-[10px] text-zinc-400 bg-white/[0.04] border border-white/[0.06] py-0.5 px-2 rounded-md flex items-center gap-1">
+                          <Calendar size={10} className="text-zinc-500" />
                           Prazo: {task.dueDate}
                         </span>
                       )}
@@ -377,138 +358,135 @@ export function TripTasksTab({ tasks, onSaveTasks }: TripTasksTabProps) {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 max-sm:opacity-100 transition-opacity shrink-0">
+                <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
                   <button
+                    type="button"
                     onClick={() => handleOpenModal(task)}
-                    className="p-1.5 text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+                    className="p-1.5 text-zinc-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] rounded-lg transition-colors cursor-pointer"
                     title="Editar tarefa"
                   >
                     <Edit3 size={13} />
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleDeleteTask(task.id)}
-                    className="p-1.5 text-zinc-400 hover:text-red-400 bg-white/5 hover:bg-red-500/15 rounded-lg transition-colors cursor-pointer"
+                    className="p-1.5 text-zinc-400 hover:text-red-400 bg-white/[0.04] hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
                     title="Excluir tarefa"
                   >
                     <Trash2 size={13} />
                   </button>
                 </div>
-              </motion.div>
+              </div>
             );
           })}
         </div>
       )}
 
       {/* Modal: Nova / Editar Tarefa */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsModalOpen(false)}
-              className="absolute inset-0 bg-black/75 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative w-full max-w-lg bg-[#0c0c12] border border-white/10 rounded-3xl p-6 shadow-2xl z-10 space-y-4"
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-white/5">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <CheckSquare className="text-purple-400" size={18} />
-                  {editingTask ? "Editar Tarefa" : "Nova Tarefa de Viagem"}
-                </h3>
-                <button
-                  onClick={() => setIsModalOpen(false)}
-                  className="text-zinc-500 hover:text-white p-1 cursor-pointer"
-                >
-                  <X size={18} />
-                </button>
+      {isModalOpen && (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            onClick={() => setIsModalOpen(false)}
+            className="absolute inset-0 bg-black/80"
+          />
+          <div className="relative w-full max-w-lg bg-[#111113] border border-white/[0.08] rounded-2xl p-5 sm:p-6 shadow-2xl z-10 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <CheckSquare className="text-zinc-400" size={18} />
+                {editingTask ? "Editar Tarefa" : "Nova Tarefa de Viagem"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="text-zinc-500 hover:text-white p-1 rounded-lg hover:bg-white/[0.06] cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTask} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                  Título da Tarefa *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Ex: Conseguir cartão de ônibus/metrô, Comprar chip eSIM..."
+                  className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 transition-colors"
+                />
               </div>
 
-              <form onSubmit={handleSaveTask} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                    Título da Tarefa *
+                  <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                    Categoria
+                  </label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value as TripTaskCategory)}
+                    className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/25"
+                  >
+                    <option value="TRANSPORT">Transporte</option>
+                    <option value="DOCUMENTS">Documentos & Vistos</option>
+                    <option value="FINANCES">Finanças & Moeda</option>
+                    <option value="HEALTH_INSURANCE">Saúde & Seguro</option>
+                    <option value="BOOKINGS">Reservas & Ingressos</option>
+                    <option value="GENERAL">Geral</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                    Prazo / Data Limite
                   </label>
                   <input
-                    type="text"
-                    required
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Ex: Conseguir cartão de ônibus/metrô, Comprar chip eSIM..."
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 transition-colors"
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/25"
                   />
                 </div>
+              </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                      Categoria
-                    </label>
-                    <select
-                      value={category}
-                      onChange={(e) => setCategory(e.target.value as TripTaskCategory)}
-                      className="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
-                    >
-                      <option value="TRANSPORT">Transporte</option>
-                      <option value="DOCUMENTS">Documentos & Vistos</option>
-                      <option value="FINANCES">Finanças & Moeda</option>
-                      <option value="HEALTH_INSURANCE">Saúde & Seguro</option>
-                      <option value="BOOKINGS">Reservas & Ingressos</option>
-                      <option value="GENERAL">Geral</option>
-                    </select>
-                  </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                  Notas & Instruções
+                </label>
+                <textarea
+                  rows={3}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Ex: Baixar o aplicativo oficial de transporte para recarregar o cartão..."
+                  className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 resize-none"
+                />
+              </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                      Prazo / Data Limite
-                    </label>
-                    <input
-                      type="date"
-                      value={dueDate}
-                      onChange={(e) => setDueDate(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                    Notas & Instruções
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Ex: Baixar o aplicativo oficial de transporte para recarregar o cartão no celular..."
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 resize-none"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-3 border-t border-white/5">
-                  <button
-                    type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 transition-colors cursor-pointer shadow-md shadow-purple-900/30"
-                  >
-                    Salvar Tarefa
-                  </button>
-                </div>
-              </form>
-            </motion.div>
+              <div className="flex justify-end gap-2 pt-3 border-t border-white/[0.06]">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-medium text-zinc-200 bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.1] transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-semibold text-zinc-950 bg-zinc-100 hover:bg-white transition-colors cursor-pointer"
+                >
+                  Salvar Tarefa
+                </button>
+              </div>
+            </form>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }

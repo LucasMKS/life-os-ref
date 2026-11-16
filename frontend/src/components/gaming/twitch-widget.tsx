@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { gamingApi } from "@/lib/api";
+import { sanitizeUrl } from "@/lib/security";
 import {
   MonitorPlay,
   ExternalLink,
@@ -13,11 +14,49 @@ import {
 } from "lucide-react";
 import { Twitch } from "./twitch-icon";
 import { toast } from "sonner";
-import { motion, AnimatePresence } from "framer-motion";
 import { TrackedTwitchChannel } from "@/lib/types";
+import { EmptyState, SurfacePanel } from "@/components/ui/page-shell";
 
 interface TwitchWidgetProps {
   showManagement?: boolean;
+}
+
+interface LiveStream {
+  user_name?: string;
+  thumbnail_url?: string;
+  title?: string;
+  game_name?: string;
+  viewer_count?: number;
+}
+
+function StreamThumbnail({
+  src,
+  alt,
+}: {
+  src?: string;
+  alt: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const safeSrc = sanitizeUrl(src);
+
+  if (!safeSrc || failed) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-[#09090b] text-zinc-700">
+        <MonitorPlay className="w-7 h-7" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={safeSrc}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailed(true)}
+      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+    />
+  );
 }
 
 export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
@@ -25,9 +64,11 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
   const [twitchChannelInput, setTwitchChannelInput] = useState("");
   const [recordVodInput, setRecordVodInput] = useState(false);
   const [recordQualityInput, setRecordQualityInput] = useState("720p60");
-  const [activeEmbedChannel, setActiveEmbedChannel] = useState<string | null>(null);
+  const [activeEmbedChannel, setActiveEmbedChannel] = useState<string | null>(
+    null
+  );
 
-  const { data: liveStreams = [], isLoading } = useQuery({
+  const { data: liveStreams = [], isLoading } = useQuery<LiveStream[]>({
     queryKey: ["twitch-live-streams"],
     queryFn: gamingApi.getLiveStreams,
     refetchInterval: 1000 * 60 * 5,
@@ -50,8 +91,8 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
       setRecordVodInput(false);
       toast.success("Canal adicionado com sucesso!");
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || "Erro ao adicionar canal.");
+    onError: (error: { response?: { data?: { message?: string } } }) => {
+      toast.error(error?.response?.data?.message || "Erro ao adicionar canal.");
     },
   });
 
@@ -66,13 +107,18 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
   });
 
   const toggleRecordMutation = useMutation({
-    mutationFn: (payload: { id: string; recordVod: boolean; recordQuality?: string }) =>
-      gamingApi.toggleTrackedTwitchRecord(payload),
+    mutationFn: (payload: {
+      id: string;
+      recordVod: boolean;
+      recordQuality?: string;
+    }) => gamingApi.toggleTrackedTwitchRecord(payload),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["twitch-preferences"] });
       queryClient.invalidateQueries({ queryKey: ["twitch-dvr-channels"] });
       if (variables.recordVod) {
-        toast.success(`Gravação DVR configurada (${variables.recordQuality || "720p60"})!`);
+        toast.success(
+          `Gravação DVR configurada (${variables.recordQuality || "720p60"})!`
+        );
       } else {
         toast.info("Gravação desativada no DVR.");
       }
@@ -84,50 +130,58 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
 
   const handleAddTwitchChannel = (e: React.FormEvent) => {
     e.preventDefault();
-    if (twitchChannelInput.trim().length < 2) return;
+    const cleaned = twitchChannelInput.trim();
+    if (cleaned.length < 2) return;
     addTwitchChannelMutation.mutate({
-      channelName: twitchChannelInput.trim(),
+      channelName: cleaned,
       recordVod: recordVodInput,
       recordQuality: recordQualityInput,
     });
   };
 
+  const safeEmbedUrl = activeEmbedChannel
+    ? sanitizeUrl(
+        `https://player.twitch.tv/?channel=${encodeURIComponent(
+          activeEmbedChannel.toLowerCase()
+        )}&parent=${
+          typeof window !== "undefined" ? encodeURIComponent(window.location.hostname) : "localhost"
+        }&autoplay=true`
+      )
+    : null;
+
   if (isLoading) {
     return (
-      <div className="bg-[#121214]/60 border border-white/5 rounded-3xl p-5 md:p-6 lg:p-8 animate-pulse h-64 flex flex-col items-center justify-center backdrop-blur-md">
-        <MonitorPlay className="text-zinc-800 w-10 h-10 mb-4" />
-        <div className="h-4 w-32 bg-white/5 rounded-full"></div>
-      </div>
+      <SurfacePanel className="h-56 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-zinc-500">
+          <Loader2 className="w-6 h-6 animate-spin" />
+          <span className="text-xs">Carregando streams...</span>
+        </div>
+      </SurfacePanel>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       {showManagement && (
-        <div className="bg-[#121214]/70 backdrop-blur-xl border border-white/5 border-t-purple-500/30 rounded-3xl p-5 md:p-6 lg:p-7 shadow-xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/5 rounded-full blur-3xl pointer-events-none transition-opacity group-hover:opacity-100 opacity-30"></div>
-
-          <div className="flex items-center justify-between mb-5 md:mb-6 relative z-10">
-            <h4 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
-              <Twitch className="w-4 h-4 md:w-5 md:h-5 text-purple-400" />
-              Radar Twitch
-            </h4>
-          </div>
-
-          <div className="flex flex-col gap-5 md:gap-6 relative z-10">
+        <SurfacePanel
+          title="Radar Twitch"
+          icon={<Twitch className="w-3.5 h-3.5 text-blue-400" />}
+          accent="blue"
+        >
+          <div className="flex flex-col gap-5">
             <form
               onSubmit={handleAddTwitchChannel}
               className="flex flex-col gap-2.5"
             >
-              <div className="flex gap-2 md:gap-3">
+              <div className="flex gap-2">
                 <div className="relative flex-1">
-                  <MonitorPlay className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                  <MonitorPlay className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
                   <input
                     type="text"
                     value={twitchChannelInput}
                     onChange={(e) => setTwitchChannelInput(e.target.value)}
-                    placeholder="Usuário (ex: alanzoka)"
-                    className="w-full bg-black/40 border border-white/10 rounded-2xl pl-11 pr-4 py-3 md:py-3.5 text-sm text-zinc-200 focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all placeholder:text-zinc-600"
+                    placeholder="Usuário Twitch (ex: alanzoka)"
+                    className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-white/25 transition-colors placeholder:text-zinc-600"
                   />
                 </div>
                 <button
@@ -136,23 +190,24 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
                     addTwitchChannelMutation.isPending ||
                     twitchChannelInput.trim().length < 2
                   }
-                  className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 md:px-5 rounded-2xl font-medium transition-colors flex items-center justify-center shadow-[0_0_20px_rgba(147,51,234,0.3)]"
+                  className="bg-zinc-100 text-zinc-950 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed px-4 rounded-xl font-semibold transition-colors flex items-center justify-center shrink-0"
+                  title="Adicionar canal"
                 >
                   {addTwitchChannelMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <Plus className="w-4 h-4 md:w-4 md:h-4" />
+                    <Plus className="w-4 h-4" />
                   )}
                 </button>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3 px-1 text-xs text-zinc-400">
+              <div className="flex flex-wrap items-center gap-3 px-0.5 text-xs text-zinc-400">
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={recordVodInput}
                     onChange={(e) => setRecordVodInput(e.target.checked)}
-                    className="rounded border-zinc-700 bg-black/50 text-purple-600 focus:ring-purple-500 accent-purple-600"
+                    className="rounded border-zinc-700 bg-[#09090b] accent-zinc-200"
                   />
                   <span>Gravar lives automaticamente (DVR)</span>
                 </label>
@@ -162,7 +217,7 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
                     <select
                       value={recordQualityInput}
                       onChange={(e) => setRecordQualityInput(e.target.value)}
-                      className="bg-black/60 border border-white/10 rounded-lg text-[11px] text-zinc-300 px-2 py-0.5 focus:outline-none focus:border-purple-500"
+                      className="bg-[#09090b] border border-white/[0.08] rounded-lg text-[11px] text-zinc-300 px-2 py-1 focus:outline-none focus:border-white/25"
                     >
                       <option value="1080p60">1080p60 (Full HD)</option>
                       <option value="720p60">720p60 (Recomendado)</option>
@@ -175,14 +230,14 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
               </div>
             </form>
 
-            <div className="bg-black/20 border border-white/5 rounded-2xl p-4 md:p-5">
-              <h5 className="text-[9px] md:text-[10px] font-bold text-zinc-500 mb-3 uppercase tracking-wider">
+            <div className="bg-[#09090b] border border-white/[0.06] rounded-xl p-3.5 sm:p-4">
+              <h5 className="text-[10px] font-semibold text-zinc-500 mb-3 uppercase tracking-wider">
                 Canais Rastreados
               </h5>
               {isLoadingTwitchChannels ? (
-                <div className="flex items-center gap-2 text-zinc-500 text-xs md:text-sm">
-                  <Loader2 className="w-3.5 h-3.5 md:w-4 md:h-4 animate-spin" />{" "}
-                  Sincronizando...
+                <div className="flex items-center gap-2 text-zinc-500 text-xs">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Sincronizando...</span>
                 </div>
               ) : trackedTwitchChannels && trackedTwitchChannels.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
@@ -198,11 +253,12 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
                     return (
                       <span
                         key={channel.id}
-                        className="inline-flex items-center gap-1.5 md:gap-2 text-[11px] md:text-xs font-medium text-zinc-200 bg-purple-500/10 border border-purple-500/20 rounded-lg pl-2.5 pr-1 py-1 md:pl-3 md:pr-1.5 md:py-1.5 shadow-sm transition-all"
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-200 bg-[#111113] border border-white/[0.08] rounded-xl pl-3 pr-1.5 py-1.5"
                       >
-                        <span className="font-semibold">{channel.channelName}</span>
+                        <span className="font-semibold">
+                          {channel.channelName}
+                        </span>
 
-                        {/* Botão Toggle REC */}
                         <button
                           type="button"
                           disabled={isBusy}
@@ -213,24 +269,26 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
                               recordQuality: channel.recordQuality || "720p60",
                             })
                           }
-                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed border ${
                             channel.recordVod
-                              ? "bg-red-500/20 text-red-400 border border-red-500/30 shadow-[0_0_8px_rgba(239,68,68,0.2)]"
-                              : "bg-white/5 text-zinc-500 hover:text-zinc-300 hover:bg-white/10"
+                              ? "bg-red-500/10 text-red-400 border-red-500/20"
+                              : "bg-white/[0.04] text-zinc-500 border-transparent hover:text-zinc-300"
                           }`}
                           title={
                             channel.recordVod
-                              ? `Gravação ativada (${channel.recordQuality || "720p60"}). Clique para desligar.`
-                              : "Gravação desativada. Clique para ativar gravação automática."
+                              ? `Gravação ativada (${
+                                  channel.recordQuality || "720p60"
+                                }). Clique para desligar.`
+                              : "Gravação desativada. Clique para ativar."
                           }
                         >
                           {isChannelPending ? (
-                            <Loader2 className="w-2.5 h-2.5 animate-spin text-zinc-300" />
+                            <Loader2 className="w-2.5 h-2.5 animate-spin" />
                           ) : (
                             <span
                               className={`w-1.5 h-1.5 rounded-full ${
                                 channel.recordVod
-                                  ? "bg-red-500 animate-pulse"
+                                  ? "bg-red-400"
                                   : "bg-zinc-600"
                               }`}
                             />
@@ -238,42 +296,41 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
                           <span>REC</span>
                         </button>
 
-                        {/* Seletor de Qualidade por canal */}
                         {channel.recordVod && (
                           <select
                             value={channel.recordQuality || "720p60"}
                             disabled={isBusy}
                             onChange={(e) => {
-                              const newQuality = e.target.value;
                               toggleRecordMutation.mutate({
                                 id: channel.id,
                                 recordVod: true,
-                                recordQuality: newQuality,
+                                recordQuality: e.target.value,
                               });
                             }}
-                            className="bg-black/60 border border-red-500/30 text-red-300 hover:text-white text-[10px] rounded px-1.5 py-0.5 outline-none focus:border-red-400 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                            title="Alterar qualidade da gravação deste canal no LiveStreamDVR"
+                            className="bg-[#09090b] border border-white/[0.08] text-zinc-300 text-[10px] rounded-md px-1.5 py-0.5 outline-none focus:border-white/25 cursor-pointer disabled:opacity-50"
+                            title="Alterar qualidade da gravação"
                           >
                             <option value="1080p60">1080p60</option>
                             <option value="720p60">720p60</option>
                             <option value="720p">720p</option>
                             <option value="480p">480p</option>
-                            <option value="best">best (máx)</option>
+                            <option value="best">best</option>
                           </select>
                         )}
 
                         <button
+                          type="button"
                           onClick={() =>
                             removeTwitchChannelMutation.mutate(channel.id)
                           }
                           disabled={isBusy}
-                          className="p-1 text-zinc-400 hover:text-white hover:bg-red-500/80 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="p-1 text-zinc-500 hover:text-red-400 hover:bg-white/[0.05] rounded-lg transition-colors disabled:opacity-50"
                           title="Parar de monitorar"
                         >
                           {isRemovingThisChannel ? (
-                            <Loader2 className="w-3 h-3 md:w-3.5 md:h-3.5 animate-spin text-red-400" />
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-red-400" />
                           ) : (
-                            <Trash2 className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           )}
                         </button>
                       </span>
@@ -281,158 +338,136 @@ export function TwitchWidget({ showManagement = false }: TwitchWidgetProps) {
                   })}
                 </div>
               ) : (
-                <p className="text-zinc-600 text-xs md:text-sm text-center py-2">
-                  Lista vazia.
+                <p className="text-zinc-500 text-xs text-center py-2">
+                  Nenhum canal rastreado ainda.
                 </p>
               )}
             </div>
           </div>
-        </div>
+        </SurfacePanel>
       )}
 
-      <div className="bg-[#121214]/60 border border-white/5 rounded-3xl p-5 md:p-6 lg:p-8 flex flex-col backdrop-blur-md">
-        <div className="flex items-center justify-between mb-6 md:mb-8">
-          <div className="flex items-center gap-2 md:gap-3">
-            <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-purple-500/10 flex items-center justify-center border border-purple-500/20">
-              <MonitorPlay className="text-purple-400 w-4 h-4 md:w-5 md:h-5" />
-            </div>
-            <h2 className="text-lg md:text-xl font-bold text-white tracking-tight">
-              Ao Vivo Agora
-            </h2>
-          </div>
+      <SurfacePanel
+        title="Ao Vivo Agora"
+        icon={<MonitorPlay className="w-3.5 h-3.5 text-blue-400" />}
+        accent="blue"
+        action={
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+            {liveStreams.length}{" "}
+            {liveStreams.length === 1 ? "Stream" : "Streams"}
+          </span>
+        }
+      >
+        {liveStreams.length === 0 ? (
+          <EmptyState
+            icon={<MonitorPlay className="w-5 h-5" />}
+            title="Nenhum canal ao vivo agora"
+            description="Os canais monitorados estão offline no momento."
+          />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {liveStreams.map((stream, index) => {
+              const userName = stream.user_name || "canal";
+              const streamUrl = sanitizeUrl(
+                `https://twitch.tv/${encodeURIComponent(userName.toLowerCase())}`
+              );
 
-          <div className="flex items-center gap-1.5 md:gap-2 bg-red-500/10 border border-red-500/20 px-2.5 py-1 md:px-3 md:py-1.5 rounded-full shadow-[0_0_15px_rgba(239,68,68,0.2)]">
-            <span className="relative flex h-1.5 w-1.5 md:h-2 md:w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 md:h-2 md:w-2 bg-red-500"></span>
-            </span>
-            <span className="text-[9px] md:text-[10px] font-bold text-red-400 uppercase tracking-widest">
-              {liveStreams.length}{" "}
-              {liveStreams.length === 1 ? "Stream" : "Streams"}
-            </span>
+              return (
+                <div
+                  key={`${userName}-${index}`}
+                  className="group flex flex-col gap-2.5 bg-[#09090b] border border-white/[0.06] hover:border-white/[0.12] rounded-2xl p-2.5 transition-colors"
+                >
+                  <div className="relative aspect-video rounded-xl overflow-hidden bg-[#111113]">
+                    <StreamThumbnail
+                      src={stream.thumbnail_url}
+                      alt={stream.title || userName}
+                    />
+                    <div className="absolute bottom-2 left-2 bg-black/75 px-2 py-0.5 rounded-md text-[10px] font-semibold text-zinc-100 flex items-center gap-1.5 border border-white/[0.08] tabular-nums">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                      {stream.viewer_count?.toLocaleString("pt-BR") ?? "0"}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col px-1 pb-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-zinc-100 font-semibold text-sm truncate">
+                        {userName}
+                      </h3>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setActiveEmbedChannel(userName)}
+                          className="p-1.5 text-zinc-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] rounded-lg transition-colors"
+                          title="Assistir no Life OS"
+                        >
+                          <MonitorPlay className="w-3.5 h-3.5" />
+                        </button>
+                        {streamUrl && (
+                          <a
+                            href={streamUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 text-zinc-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] rounded-lg transition-colors"
+                            title="Abrir na Twitch"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                    {stream.game_name && (
+                      <p className="text-zinc-400 text-[11px] font-medium truncate mt-0.5">
+                        {stream.game_name}
+                      </p>
+                    )}
+                    {stream.title && (
+                      <p
+                        className="text-zinc-500 text-xs line-clamp-2 mt-1 leading-snug"
+                        title={stream.title}
+                      >
+                        {stream.title}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </SurfacePanel>
+
+      {/* Modal Player Embutido Twitch */}
+      {activeEmbedChannel && safeEmbedUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            onClick={() => setActiveEmbedChannel(null)}
+            className="absolute inset-0 bg-black/80"
+            aria-hidden="true"
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Player Twitch: ${activeEmbedChannel}`}
+            className="relative w-full max-w-4xl aspect-video bg-[#111113] border border-white/[0.1] rounded-2xl overflow-hidden shadow-2xl z-10 flex flex-col"
+          >
+            <button
+              type="button"
+              onClick={() => setActiveEmbedChannel(null)}
+              className="absolute top-3 right-3 z-20 p-2 bg-black/75 hover:bg-black text-zinc-300 hover:text-white rounded-full border border-white/[0.1] transition-colors"
+              title="Fechar player"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <iframe
+              src={safeEmbedUrl}
+              title={`Twitch stream ${activeEmbedChannel}`}
+              className="w-full h-full border-0"
+              allowFullScreen
+            />
           </div>
         </div>
-
-        {liveStreams.length === 0 ? (
-          <div className="text-center flex flex-col items-center justify-center gap-3 min-h-[150px]">
-            <MonitorPlay className="text-zinc-700 w-8 h-8 md:w-10 md:h-10 mb-1 md:mb-2" />
-            <p className="text-xs md:text-sm font-medium text-zinc-400">
-              Nenhum canal monitorado ao vivo agora.
-            </p>
-            <p className="text-[10px] md:text-xs text-zinc-600">
-              Eles devem estar dormindo... ou jogando offline.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
-            {liveStreams.map((stream: any, index: number) => (
-              <a
-                key={index}
-                href={`https://twitch.tv/${stream.user_name?.toLowerCase() ?? ""}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex flex-col gap-2.5 md:gap-3"
-              >
-                <div className="relative aspect-video rounded-2xl overflow-hidden bg-black/50 border border-white/5 lg:group-hover:ring-2 lg:group-hover:ring-purple-500/50 transition-all duration-300 shadow-lg">
-                  <img
-                    src={stream.thumbnail_url}
-                    alt={stream.title}
-                    className="w-full h-full object-cover lg:group-hover:scale-110 transition-transform duration-700 ease-out"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60"></div>
-                  <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded-lg text-[9px] md:text-[10px] font-bold text-white flex items-center gap-1.5 border border-white/10">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                    {stream.viewer_count?.toLocaleString("pt-BR") ?? "0"}
-                  </div>
-                  <div className="hidden lg:flex absolute inset-0 bg-purple-900/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 items-center justify-center backdrop-blur-[2px] gap-2.5">
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setActiveEmbedChannel(stream.user_name);
-                      }}
-                      className="bg-purple-600 hover:bg-purple-500 text-white p-2.5 rounded-xl translate-y-4 group-hover:translate-y-0 transition-transform duration-300 shadow-lg shadow-purple-500/30"
-                      title="Assistir no Life OS"
-                    >
-                      <MonitorPlay className="w-4 h-4" />
-                    </button>
-                    <div className="bg-zinc-800 hover:bg-zinc-700 text-white p-2.5 rounded-xl translate-y-4 group-hover:translate-y-0 transition-transform duration-300">
-                      <ExternalLink className="w-4 h-4" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-col px-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-zinc-100 font-bold text-sm truncate lg:group-hover:text-purple-400 transition-colors">
-                      {stream.user_name}
-                    </h3>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setActiveEmbedChannel(stream.user_name);
-                        }}
-                        className="p-1 text-purple-400 hover:text-purple-300 bg-purple-500/10 rounded-lg border border-purple-500/20"
-                        title="Assistir no Life OS"
-                      >
-                        <MonitorPlay className="w-3 h-3" />
-                      </button>
-                      <ExternalLink className="w-3 h-3 text-zinc-500 lg:hidden shrink-0" />
-                    </div>
-                  </div>
-                  <p className="text-purple-400/80 text-[10px] md:text-[11px] font-bold uppercase tracking-wider truncate mt-0.5">
-                    {stream.game_name}
-                  </p>
-                  <p
-                    className="text-zinc-500 text-[11px] md:text-xs line-clamp-2 mt-1 md:mt-1.5 leading-snug"
-                    title={stream.title}
-                  >
-                    {stream.title}
-                  </p>
-                </div>
-              </a>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Modal para Player Embutido Twitch */}
-      <AnimatePresence>
-        {activeEmbedChannel && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setActiveEmbedChannel(null)}
-              className="absolute inset-0 bg-black/85 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-4xl aspect-video bg-zinc-950 border border-white/10 rounded-3xl overflow-hidden shadow-2xl z-10 flex flex-col"
-            >
-              <div className="absolute top-4 right-4 z-20">
-                <button
-                  onClick={() => setActiveEmbedChannel(null)}
-                  className="p-2 bg-black/60 hover:bg-black/90 text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <iframe
-                src={`https://player.twitch.tv/?channel=${activeEmbedChannel.toLowerCase()}&parent=${typeof window !== "undefined" ? window.location.hostname : "localhost"}&autoplay=true`}
-                className="w-full h-full border-0"
-                allowFullScreen
-              />
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      )}
     </div>
   );
 }
-

@@ -9,6 +9,7 @@ import {
   translateStatusDetail,
 } from "@/lib/sports-translations";
 import { formatMatchTime } from "@/lib/date-utils";
+import { sanitizeUrl } from "@/lib/security";
 
 interface MatchCardProps {
   match: SportMatch;
@@ -43,14 +44,16 @@ export const MatchCard = memo(function MatchCard({ match, isFavorite, onClick }:
   const awayWinner = isFinished && match.awayTeam?.winner;
 
   const renderLogo = (logoUrl?: string, name?: string, error?: boolean, onError?: () => void) => {
-    if (logoUrl && !error) {
+    const safeLogoUrl = sanitizeUrl(logoUrl);
+    if (safeLogoUrl && !error) {
       return (
         <img
-          src={logoUrl}
+          src={safeLogoUrl}
           alt={name || ""}
           onError={onError}
           className="w-8 h-8 md:w-9 md:h-9 object-contain shrink-0"
           loading="lazy"
+          decoding="async"
         />
       );
     }

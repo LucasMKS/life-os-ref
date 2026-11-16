@@ -70,7 +70,7 @@ export function SportsWidget() {
     .slice(0, 3);
 
   return (
-    <div className="relative bg-[#111113] border border-white/[0.06] hover:border-white/[0.12] rounded-2xl flex flex-col h-full overflow-hidden transition-colors">
+    <div className="relative bg-[#111113] border border-white/[0.06] border-t-2 border-t-emerald-500/50 hover:border-white/[0.12] rounded-2xl flex flex-col h-full overflow-hidden transition-colors">
       <div className="p-5 md:p-6 flex flex-col flex-grow relative z-10">
         {/* Top Header */}
         <div className="flex items-center justify-between gap-3 mb-4">

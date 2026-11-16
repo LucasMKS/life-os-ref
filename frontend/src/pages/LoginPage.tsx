@@ -4,7 +4,17 @@ import { useAuthStore } from "@/lib/authStore";
 import { authService } from "@/lib/api";
 import { cookieUtils } from "@/lib/cookieUtils";
 import { extractUserIdFromToken } from "@/lib/jwtUtils";
-import { Lock, Mail, Loader2 } from "lucide-react";
+import { isTokenExpired, sanitizeUrl } from "@/lib/security";
+import { Lock, Mail, Loader2, LayoutGrid } from "lucide-react";
+
+const REGISTER_URL = sanitizeUrl(
+  `https://filmes.lucasmks.com.br/login?callbackUrl=${encodeURIComponent(
+    "https://lifeos.lucasmks.com.br/auth/callback",
+  )}&action=register`,
+);
+const RESET_PASSWORD_URL = sanitizeUrl(
+  "https://filmes.lucasmks.com.br/reset-password",
+);
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -16,21 +26,31 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setError("Preencha email e senha.");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
     try {
-      const response = await authService.login({ email, password });
+      const response = await authService.login({
+        email: trimmedEmail,
+        password,
+      });
 
-      const token = response.token;
-      let userId = response.user?.id != null ? String(response.user.id) : null;
-
-      if (!userId && token) {
-        userId = extractUserIdFromToken(token);
+      const token = response?.token;
+      if (!token || isTokenExpired(token)) {
+        throw new Error("Sessão inválida ou expirada recebida do servidor.");
       }
 
-      if (!token) {
-        throw new Error("Token não recebido do servidor.");
+      let userId =
+        response.user?.id != null ? String(response.user.id) : null;
+
+      if (!userId) {
+        userId = extractUserIdFromToken(token);
       }
 
       setAuth(token, String(userId || "1"));
@@ -42,48 +62,65 @@ export default function LoginPage() {
 
       router.push("/");
     } catch (err: any) {
-      console.error("Erro completo:", err);
-      setError(
-        err.response?.data?.error || 
-        err.response?.data?.message || 
-        err.message || 
-        "Erro ao fazer login",
-      );
+      const message =
+        err?.response?.data?.error ||
+        err?.response?.data?.message ||
+        err?.message ||
+        "Erro ao fazer login";
+      setError(typeof message === "string" ? message : "Erro ao fazer login");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-neutral-100 p-4">
-      <div className="w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-2xl p-8 shadow-2xl">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Life OS</h1>
-          <p className="text-neutral-400 text-sm">
+    <main className="min-h-screen flex items-center justify-center relative bg-[#09090b] text-zinc-100 p-4 overflow-x-hidden">
+      <div
+        aria-hidden="true"
+        className="fixed inset-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:20px_20px] pointer-events-none z-0"
+      />
+
+      <div className="relative z-10 w-full max-w-md bg-[#111113] border border-white/[0.06] rounded-2xl p-6 sm:p-8">
+        <div className="flex flex-col items-center text-center mb-7">
+          <div className="w-11 h-11 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mb-4">
+            <LayoutGrid className="w-5 h-5 text-zinc-200" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-white">
+            Life<span className="text-zinc-400">OS</span>
+          </h1>
+          <p className="text-zinc-400 text-xs sm:text-sm mt-1">
             Faça login com sua conta integrada
           </p>
         </div>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/50 text-red-500 text-sm p-3 rounded-lg mb-6 text-center">
+          <div
+            role="alert"
+            className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs sm:text-sm px-3.5 py-2.5 rounded-xl mb-5 text-center"
+          >
             {error}
           </div>
         )}
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-neutral-400 mb-1">
+            <label
+              htmlFor="login-email"
+              className="block text-xs font-medium text-zinc-400 mb-1.5"
+            >
               Email
             </label>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-500">
-                <Mail size={18} />
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
+                <Mail className="w-4 h-4" />
               </div>
               <input
+                id="login-email"
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-neutral-950 border border-neutral-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                className="w-full pl-10 pr-3.5 py-2.5 text-sm bg-[#09090b] border border-white/[0.08] rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:border-white/25 outline-none transition-colors"
                 placeholder="seu@email.com"
                 required
               />
@@ -91,18 +128,23 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-neutral-400 mb-1">
+            <label
+              htmlFor="login-password"
+              className="block text-xs font-medium text-zinc-400 mb-1.5"
+            >
               Senha
             </label>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-500">
-                <Lock size={18} />
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
+                <Lock className="w-4 h-4" />
               </div>
               <input
+                id="login-password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-neutral-950 border border-neutral-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                className="w-full pl-10 pr-3.5 py-2.5 text-sm bg-[#09090b] border border-white/[0.08] rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:border-white/25 outline-none transition-colors"
                 placeholder="••••••••"
                 required
               />
@@ -112,36 +154,46 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed mt-6"
+            className="w-full py-2.5 px-4 bg-zinc-100 text-zinc-950 hover:bg-white text-sm font-semibold rounded-xl transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed mt-2"
           >
             {loading ? (
-              <Loader2 size={20} className="animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               "Entrar no Life OS"
             )}
           </button>
         </form>
 
-        <div className="mt-4 space-y-2">
+        <div className="mt-6 space-y-2.5">
           <div className="relative flex items-center">
-            <div className="flex-1 border-t border-neutral-800" />
-            <span className="mx-3 text-xs text-neutral-600">ou</span>
-            <div className="flex-1 border-t border-neutral-800" />
+            <div className="flex-1 border-t border-white/[0.06]" />
+            <span className="mx-3 text-[11px] uppercase tracking-wider text-zinc-500">
+              ou
+            </span>
+            <div className="flex-1 border-t border-white/[0.06]" />
           </div>
-          <a
-            href={`https://filmes.lucasmks.com.br/login?callbackUrl=${encodeURIComponent("https://lifeos.lucasmks.com.br/auth/callback")}&action=register`}
-            className="block w-full py-2.5 px-4 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-sm font-medium rounded-lg transition-colors text-center"
-          >
-            Criar conta
-          </a>
-          <a
-            href="https://filmes.lucasmks.com.br/reset-password"
-            className="block w-full py-2.5 px-4 text-neutral-500 hover:text-neutral-300 text-sm text-center transition-colors rounded-lg hover:bg-neutral-800/50"
-          >
-            Esqueci minha senha
-          </a>
+
+          {REGISTER_URL && (
+            <a
+              href={REGISTER_URL}
+              rel="noopener noreferrer"
+              className="block w-full py-2.5 px-4 bg-white/[0.05] text-zinc-200 border border-white/[0.08] hover:bg-white/[0.1] text-sm font-medium rounded-xl transition-colors text-center"
+            >
+              Criar conta
+            </a>
+          )}
+
+          {RESET_PASSWORD_URL && (
+            <a
+              href={RESET_PASSWORD_URL}
+              rel="noopener noreferrer"
+              className="block w-full py-2 px-4 text-zinc-500 hover:text-zinc-300 text-xs text-center transition-colors rounded-xl hover:bg-white/[0.03]"
+            >
+              Esqueci minha senha
+            </a>
+          )}
         </div>
       </div>
-    </div>
+    </main>
   );
 }

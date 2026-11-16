@@ -1,93 +1,101 @@
 "use client";
 
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Bell,
   CheckCheck,
-  Flag,
-  Wallet,
-  Gamepad2,
-  BookOpen,
   BellRing,
   Clock,
   Loader2,
-  Filter,
-  Trophy,
   Sliders,
-  Film,
-  Tv,
-  CloudSun,
   AlarmClock,
-  Sparkles,
 } from "lucide-react";
 import { notificationApi } from "@/lib/api";
 import { AppNotification } from "@/lib/types";
+import { sanitizeNotificationHtml } from "@/lib/security";
+import {
+  PageHeader,
+  SurfacePanel,
+  FilterPill,
+  EmptyState,
+} from "@/components/ui/page-shell";
+import { NotificationCategoryIcon, getCategoryLabel } from "./category-icon";
 import { toast } from "sonner";
-import { NotificationSettingsView } from "./notification-settings-view";
-import { CustomNotificationsView } from "./custom-notifications-view";
 
-type FilterType = "ALL" | "SPORTS" | "F1" | "FINANCE" | "GAMING" | "READING" | "MEDIA" | "TWITCH" | "WEATHER" | "CUSTOM" | "SYSTEM";
+const CustomNotificationsView = lazy(() =>
+  import("./custom-notifications-view").then((m) => ({
+    default: m.CustomNotificationsView,
+  }))
+);
 
-const FILTERS: { label: string; value: FilterType; color: string; activeClass: string }[] = [
-  { label: "Todas", value: "ALL", color: "text-zinc-400", activeClass: "bg-white/10 border-white/20 text-white" },
-  { label: "Esportes", value: "SPORTS", color: "text-amber-400", activeClass: "bg-amber-500/10 border-amber-500/30 text-amber-400" },
-  { label: "F1", value: "F1", color: "text-red-400", activeClass: "bg-red-500/10 border-red-500/30 text-red-400" },
-  { label: "Finanças", value: "FINANCE", color: "text-amber-400", activeClass: "bg-amber-500/10 border-amber-500/30 text-amber-400" },
-  { label: "Gaming", value: "GAMING", color: "text-blue-400", activeClass: "bg-blue-500/10 border-blue-500/30 text-blue-400" },
-  { label: "Leitura", value: "READING", color: "text-emerald-400", activeClass: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" },
-  { label: "Mídia", value: "MEDIA", color: "text-purple-400", activeClass: "bg-purple-500/10 border-purple-500/30 text-purple-400" },
-  { label: "Twitch", value: "TWITCH", color: "text-violet-400", activeClass: "bg-violet-500/10 border-violet-500/30 text-violet-400" },
-  { label: "Clima", value: "WEATHER", color: "text-cyan-400", activeClass: "bg-cyan-500/10 border-cyan-500/30 text-cyan-400" },
-  { label: "Personalizadas", value: "CUSTOM", color: "text-rose-400", activeClass: "bg-rose-500/10 border-rose-500/30 text-rose-400" },
+const NotificationSettingsView = lazy(() =>
+  import("./notification-settings-view").then((m) => ({
+    default: m.NotificationSettingsView,
+  }))
+);
+
+type FilterType =
+  | "ALL"
+  | "SPORTS"
+  | "F1"
+  | "FINANCE"
+  | "GAMING"
+  | "READING"
+  | "MEDIA"
+  | "TWITCH"
+  | "WEATHER"
+  | "CUSTOM"
+  | "SYSTEM";
+
+const FILTERS: { label: string; value: FilterType }[] = [
+  { label: "Todas", value: "ALL" },
+  { label: "Esportes", value: "SPORTS" },
+  { label: "F1", value: "F1" },
+  { label: "Finanças", value: "FINANCE" },
+  { label: "Gaming", value: "GAMING" },
+  { label: "Leitura", value: "READING" },
+  { label: "Mídia", value: "MEDIA" },
+  { label: "Twitch", value: "TWITCH" },
+  { label: "Clima", value: "WEATHER" },
+  { label: "Personalizadas", value: "CUSTOM" },
 ];
 
-const getIcon = (type: string) => {
-  switch (type) {
-    case "SPORTS": return <Trophy className="text-amber-400" size={15} />;
-    case "F1": return <Flag className="text-red-400" size={15} />;
-    case "FINANCE": return <Wallet className="text-amber-400" size={15} />;
-    case "GAMING": return <Gamepad2 className="text-blue-400" size={15} />;
-    case "READING": return <BookOpen className="text-emerald-400" size={15} />;
-    case "MEDIA": return <Film className="text-purple-400" size={15} />;
-    case "TWITCH": return <Tv className="text-violet-400" size={15} />;
-    case "WEATHER": return <CloudSun className="text-cyan-400" size={15} />;
-    case "CUSTOM": return <Sparkles className="text-rose-400" size={15} />;
-    default: return <BellRing className="text-zinc-400" size={15} />;
-  }
-};
-
-const getBgColor = (type: string) => {
-  switch (type) {
-    case "SPORTS": return "bg-amber-500/10 border-amber-500/20";
-    case "F1": return "bg-red-500/10 border-red-500/20";
-    case "FINANCE": return "bg-amber-500/10 border-amber-500/20";
-    case "GAMING": return "bg-blue-500/10 border-blue-500/20";
-    case "READING": return "bg-emerald-500/10 border-emerald-500/20";
-    case "MEDIA": return "bg-purple-500/10 border-purple-500/20";
-    case "TWITCH": return "bg-violet-500/10 border-violet-500/20";
-    case "WEATHER": return "bg-cyan-500/10 border-cyan-500/20";
-    case "CUSTOM": return "bg-rose-500/10 border-rose-500/20";
-    default: return "bg-white/5 border-white/10";
-  }
-};
-
-const renderMessage = (html: string) =>
-  html
-    .replace(/\n/g, "<br>")
-    .replace(/<a\s/gi, '<a target="_blank" rel="noopener noreferrer" ');
+function formatTime(isoDate?: string): string {
+  if (!isoDate) return "--:--";
+  const parsed = new Date(isoDate);
+  if (Number.isNaN(parsed.getTime())) return "--:--";
+  return parsed.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 function groupByDate(notifications: AppNotification[]): Record<string, AppNotification[]> {
   return (Array.isArray(notifications) ? notifications : []).reduce((acc, n) => {
-    const date = new Date(n.createdAt).toLocaleDateString("pt-BR", {
-      weekday: "long",
-      day: "2-digit",
-      month: "long",
-    });
+    const parsed = n?.createdAt ? new Date(n.createdAt) : null;
+    const date =
+      parsed && !Number.isNaN(parsed.getTime())
+        ? parsed.toLocaleDateString("pt-BR", {
+            weekday: "long",
+            day: "2-digit",
+            month: "long",
+          })
+        : "Sem data";
     if (!acc[date]) acc[date] = [];
     acc[date].push(n);
     return acc;
   }, {} as Record<string, AppNotification[]>);
+}
+
+function TabFallback() {
+  return (
+    <SurfacePanel>
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-zinc-500" />
+      </div>
+    </SurfacePanel>
+  );
 }
 
 export function NotificationsPage() {
@@ -117,199 +125,206 @@ export function NotificationsPage() {
     },
   });
 
-  const filtered = activeFilter === "ALL"
-    ? notifications
-    : notifications.filter((n) => n.type === activeFilter);
+  const safeNotifications = Array.isArray(notifications) ? notifications : [];
+  const filtered =
+    activeFilter === "ALL"
+      ? safeNotifications
+      : safeNotifications.filter((n) => n.type === activeFilter);
 
   const grouped = groupByDate(filtered);
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
+  const unreadCount = safeNotifications.filter((n) => !n.isRead).length;
 
   return (
-    <div className="min-h-screen bg-[#09090b] px-4 py-8 md:px-10 lg:px-16">
-      {/* Glow de fundo */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-blue-600/5 blur-[120px] rounded-full" />
+    <div>
+      <PageHeader
+        eyebrow="Sistema & Alertas"
+        icon={<Bell className="w-3.5 h-3.5" />}
+        title="Central de Notificações"
+        subtitle="Gerencie seus alertas, lembretes personalizados, briefings diários e integração com o Telegram."
+        badge={
+          unreadCount > 0 ? (
+            <span className="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 tabular-nums">
+              {unreadCount} não {unreadCount === 1 ? "lida" : "lidas"}
+            </span>
+          ) : undefined
+        }
+        actions={
+          activeTab === "feed" && unreadCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => markAllAsReadMutation.mutate()}
+              disabled={markAllAsReadMutation.isPending}
+              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold bg-white/[0.05] text-zinc-200 border border-white/[0.08] hover:bg-white/[0.1] rounded-xl transition-colors disabled:opacity-50"
+            >
+              <CheckCheck size={15} className="text-emerald-400" />
+              <span>Marcar todas como lidas</span>
+            </button>
+          ) : undefined
+        }
+      />
+
+      {/* Abas Superiores */}
+      <div
+        role="tablist"
+        aria-label="Seções de notificações"
+        className="flex flex-wrap items-center gap-1 mb-6 p-1 bg-[#111113] border border-white/[0.06] rounded-2xl w-full sm:w-fit"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "feed"}
+          onClick={() => setActiveTab("feed")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors border ${
+            activeTab === "feed"
+              ? "bg-white/[0.08] text-white border-white/[0.12]"
+              : "text-zinc-400 hover:text-zinc-200 border-transparent"
+          }`}
+        >
+          <Bell size={15} className={activeTab === "feed" ? "text-white" : "text-zinc-500"} />
+          <span>Feed</span>
+          {unreadCount > 0 && (
+            <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 rounded-full tabular-nums">
+              {unreadCount}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "custom"}
+          onClick={() => setActiveTab("custom")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors border ${
+            activeTab === "custom"
+              ? "bg-white/[0.08] text-white border-white/[0.12]"
+              : "text-zinc-400 hover:text-zinc-200 border-transparent"
+          }`}
+        >
+          <AlarmClock size={15} className={activeTab === "custom" ? "text-white" : "text-zinc-500"} />
+          <span>Lembretes</span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "settings"}
+          onClick={() => setActiveTab("settings")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors border ${
+            activeTab === "settings"
+              ? "bg-white/[0.08] text-white border-white/[0.12]"
+              : "text-zinc-400 hover:text-zinc-200 border-transparent"
+          }`}
+        >
+          <Sliders size={15} className={activeTab === "settings" ? "text-white" : "text-zinc-500"} />
+          <span>Configurações & Horários</span>
+        </button>
       </div>
 
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-3 tracking-tight">
-              <div className="p-2 bg-blue-500/10 border border-blue-500/20 rounded-2xl shrink-0">
-                <Bell className="text-blue-400" size={24} />
-              </div>
-              <span>Central de Notificações</span>
-            </h1>
-            <p className="text-zinc-500 text-sm mt-2 ml-1">
-              Gerencie seus alertas, briefings diários e o bot do Telegram.
-            </p>
+      {/* ABA: LEMBRETES PERSONALIZADOS */}
+      {activeTab === "custom" && (
+        <Suspense fallback={<TabFallback />}>
+          <CustomNotificationsView />
+        </Suspense>
+      )}
+
+      {/* ABA: CONFIGURAÇÕES */}
+      {activeTab === "settings" && (
+        <Suspense fallback={<TabFallback />}>
+          <NotificationSettingsView />
+        </Suspense>
+      )}
+
+      {/* ABA: FEED DE NOTIFICAÇÕES */}
+      {activeTab === "feed" && (
+        <div className="space-y-6">
+          {/* Filtros */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {FILTERS.map((f) => (
+              <FilterPill
+                key={f.value}
+                active={activeFilter === f.value}
+                onClick={() => setActiveFilter(f.value)}
+              >
+                {f.label}
+              </FilterPill>
+            ))}
           </div>
 
-          {activeTab === "feed" && unreadCount > 0 && (
-            <div className="flex items-center gap-2.5 shrink-0">
-              <button
-                onClick={() => markAllAsReadMutation.mutate()}
-                disabled={markAllAsReadMutation.isPending}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-zinc-300 hover:text-emerald-400 bg-white/5 hover:bg-emerald-500/10 border border-white/10 hover:border-emerald-500/30 rounded-2xl transition-all"
-              >
-                <CheckCheck size={16} />
-                <span>Marcar todas como lidas</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Abas Superiores */}
-        <div className="flex items-center gap-2 mb-8 p-1.5 bg-white/[0.03] border border-white/10 rounded-2xl w-fit">
-          <button
-            type="button"
-            onClick={() => setActiveTab("feed")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-              activeTab === "feed"
-                ? "bg-white/10 text-white shadow-sm border border-white/10"
-                : "text-zinc-400 hover:text-white"
-            }`}
-          >
-            <Bell size={16} className={activeTab === "feed" ? "text-blue-400" : "text-zinc-400"} />
-            <span>Feed de Notificações</span>
-            {unreadCount > 0 && (
-              <span className="ml-1 px-2 py-0.5 text-[11px] font-extrabold bg-blue-500 text-white rounded-full">
-                {unreadCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("custom")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-              activeTab === "custom"
-                ? "bg-white/10 text-white shadow-sm border border-white/10"
-                : "text-zinc-400 hover:text-white"
-            }`}
-          >
-            <AlarmClock size={16} className={activeTab === "custom" ? "text-blue-400" : "text-zinc-400"} />
-            <span>Lembretes Personalizados</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("settings")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-              activeTab === "settings"
-                ? "bg-white/10 text-white shadow-sm border border-white/10"
-                : "text-zinc-400 hover:text-white"
-            }`}
-          >
-            <Sliders size={16} className={activeTab === "settings" ? "text-blue-400" : "text-zinc-400"} />
-            <span>Configurações & Horários</span>
-          </button>
-        </div>
-
-        {/* ABA: LEMBRETES PERSONALIZADOS */}
-        {activeTab === "custom" && <CustomNotificationsView />}
-
-        {/* ABA: CONFIGURAÇÕES */}
-        {activeTab === "settings" && <NotificationSettingsView />}
-
-        {/* ABA: FEED DE NOTIFICAÇÕES */}
-        {activeTab === "feed" && (
-          <>
-            {/* Filtros */}
-            <div className="flex items-center gap-2 mb-6 flex-wrap">
-              <Filter size={14} className="text-zinc-600 shrink-0" />
-              {FILTERS.map((f) => (
-                <button
-                  key={f.value}
-                  onClick={() => setActiveFilter(f.value)}
-                  className={`px-3.5 py-1.5 text-xs font-bold rounded-xl border transition-all ${
-                    activeFilter === f.value
-                      ? f.activeClass
-                      : "border-white/5 text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Conteúdo */}
-            {isLoading ? (
-              <div className="flex items-center justify-center py-24">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-500/50" />
+          {/* Conteúdo */}
+          {isLoading ? (
+            <SurfacePanel>
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-6 h-6 animate-spin text-zinc-500" />
               </div>
-            ) : filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 text-center">
-                <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
-                  <BellRing className="text-zinc-700" size={32} />
-                </div>
-                <h3 className="text-white font-bold mb-1">Nenhuma notificação</h3>
-                <p className="text-zinc-500 text-sm">
-                  {activeFilter === "ALL"
-                    ? "Você ainda não recebeu nenhuma notificação."
-                    : `Sem notificações do tipo "${activeFilter}".`}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-8 animate-in fade-in duration-300">
-                {Object.entries(grouped).map(([date, items]) => (
-                  <div key={date}>
-                    <h2 className="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.2em] mb-3 ml-1 capitalize">
-                      {date}
-                    </h2>
-                    <div className="space-y-2.5">
-                      {items.map((notif) => (
+            </SurfacePanel>
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon={<BellRing size={20} />}
+              title="Nenhuma notificação"
+              description={
+                activeFilter === "ALL"
+                  ? "Você ainda não recebeu nenhuma notificação."
+                  : `Sem notificações na categoria "${getCategoryLabel(activeFilter)}".`
+              }
+            />
+          ) : (
+            <div className="space-y-6">
+              {Object.entries(grouped).map(([date, items]) => (
+                <section key={date} className="space-y-2.5">
+                  <h2 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider px-1 capitalize">
+                    {date}
+                  </h2>
+                  <div className="space-y-2">
+                    {items.map((notif) => {
+                      const safeHtml = sanitizeNotificationHtml(notif.message);
+                      return (
                         <div
                           key={notif.id}
-                          className={`relative p-4 rounded-2xl border transition-all group ${
+                          className={`relative p-4 rounded-2xl border bg-[#111113] transition-colors ${
                             notif.isRead
-                              ? "bg-white/[0.02] border-white/5 opacity-60"
-                              : `${getBgColor(notif.type)} shadow-lg`
+                              ? "border-white/[0.04] opacity-60 hover:opacity-85"
+                              : "border-white/[0.1] hover:border-white/[0.16]"
                           }`}
                         >
                           {!notif.isRead && (
                             <button
+                              type="button"
                               onClick={() => markAsReadMutation.mutate(notif.id)}
-                              className="absolute top-4 right-4 w-2 h-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.8)]"
+                              className="absolute top-4 right-4 w-2 h-2 rounded-full bg-emerald-400/80 hover:bg-emerald-400 transition-colors"
                               title="Marcar como lida"
+                              aria-label="Marcar notificação como lida"
                             />
                           )}
 
-                          <div className="flex items-start gap-3">
-                            <div className={`p-2 rounded-xl border ${getBgColor(notif.type)} shrink-0 mt-0.5`}>
-                              {getIcon(notif.type)}
+                          <div className="flex items-start gap-3 pr-5">
+                            <div className="mt-0.5">
+                              <NotificationCategoryIcon type={notif.type} size={15} />
                             </div>
-                            <div className="flex-grow min-w-0">
+                            <div className="flex-1 min-w-0">
                               <div
-                                className="text-sm text-zinc-200 leading-relaxed break-words [&_b]:font-bold [&_b]:text-white [&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 [&_a]:hover:text-blue-300 [&_a]:transition-colors [&_a]:break-all"
-                                dangerouslySetInnerHTML={{ __html: renderMessage(notif.message) }}
+                                className="text-sm text-zinc-200 leading-relaxed break-words [&_b]:font-semibold [&_b]:text-white [&_strong]:font-semibold [&_strong]:text-white [&_a]:text-zinc-100 [&_a]:underline [&_a]:underline-offset-2 [&_a]:decoration-white/30 hover:[&_a]:decoration-white [&_a]:break-all"
+                                dangerouslySetInnerHTML={{ __html: safeHtml }}
                               />
-                              <div className="flex items-center gap-2 mt-2">
-                                <Clock size={10} className="text-zinc-600" />
-                                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-                                  {new Date(notif.createdAt).toLocaleTimeString("pt-BR", {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })}
-                                </span>
-                                <span className="text-zinc-800">·</span>
-                                <span className={`text-[10px] font-bold uppercase tracking-widest ${getBgColor(notif.type).includes("red") ? "text-red-500/60" : getBgColor(notif.type).includes("amber") ? "text-amber-500/60" : getBgColor(notif.type).includes("blue") ? "text-blue-500/60" : getBgColor(notif.type).includes("emerald") ? "text-emerald-500/60" : "text-zinc-600"}`}>
-                                  {notif.type}
+                              <div className="flex items-center gap-2 mt-2 text-[11px] text-zinc-500">
+                                <Clock size={11} className="text-zinc-600 shrink-0" />
+                                <span className="tabular-nums">{formatTime(notif.createdAt)}</span>
+                                <span className="text-zinc-700">·</span>
+                                <span className="uppercase tracking-wider font-medium text-zinc-500">
+                                  {getCategoryLabel(notif.type)}
                                 </span>
                               </div>
                             </div>
                           </div>
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+                </section>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

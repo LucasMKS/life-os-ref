@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { sportsApi } from "@/lib/api";
+import { sanitizeUrl } from "@/lib/security";
 import {
   SportLeague,
   SportTeam,
@@ -158,7 +159,9 @@ function SafeImage({
     setHasError(false);
   }, [src]);
 
-  if (!src || hasError) {
+  const safeSrc = sanitizeUrl(src);
+
+  if (!safeSrc || hasError) {
     const initials = fallbackText || (alt ? alt.substring(0, 2).toUpperCase() : "?");
     return (
       <div
@@ -173,10 +176,11 @@ function SafeImage({
 
   return (
     <img
-      src={src}
+      src={safeSrc}
       alt={alt || ""}
       className={className}
       loading="lazy"
+      decoding="async"
       onError={() => setHasError(true)}
     />
   );
@@ -308,10 +312,10 @@ export function SportsFavoritesModal({ isOpen, onClose }: SportsFavoritesModalPr
       const q = searchQuery.toLowerCase().trim();
       list = teams.filter(
         (t) =>
-          t.name?.toLowerCase().includes(q) ||
-          t.displayName?.toLowerCase().includes(q) ||
-          t.shortDisplayName?.toLowerCase().includes(q) ||
-          t.abbreviation?.toLowerCase().includes(q) ||
+          (typeof t.name === "string" && t.name.toLowerCase().includes(q)) ||
+          (typeof t.displayName === "string" && t.displayName.toLowerCase().includes(q)) ||
+          (typeof t.shortDisplayName === "string" && t.shortDisplayName.toLowerCase().includes(q)) ||
+          (typeof t.abbreviation === "string" && t.abbreviation.toLowerCase().includes(q)) ||
           (t.id === "205" && ("brasil".includes(q) || "selecao".includes(q) || "brazil".includes(q)))
       );
     }

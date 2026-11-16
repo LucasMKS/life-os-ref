@@ -1,11 +1,10 @@
-import { Navbar } from "@/components/navbar";
+import { PageShell } from "@/components/ui/page-shell";
 import { NotificationsPage } from "@/components/notifications/notifications-page";
 
 export default function Notifications() {
   return (
-    <main className="min-h-screen flex flex-col bg-[#09090b] text-zinc-100">
-      <Navbar />
+    <PageShell maxWidth="5xl">
       <NotificationsPage />
-    </main>
+    </PageShell>
   );
 }

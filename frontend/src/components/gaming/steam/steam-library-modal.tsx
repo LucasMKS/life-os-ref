@@ -14,17 +14,61 @@ import {
   X,
 } from "lucide-react";
 import { gamingApi } from "@/lib/api";
+import { sanitizeUrl } from "@/lib/security";
+import { EmptyState, FilterPill } from "@/components/ui/page-shell";
 
 interface SteamLibraryModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+interface SteamGame {
+  appid: number;
+  name: string;
+  playtime_forever?: number;
+}
+
+interface TrackedGame {
+  id: string;
+  steamAppId: number;
+}
+
+type LibraryFilter = "all" | "radar" | "unplayed";
+
 const PAGE_SIZE = 20;
+
+function LibraryGameCover({ appid, name }: { appid: number; name: string }) {
+  const [failed, setFailed] = useState(false);
+  const src = sanitizeUrl(
+    `https://cdn.akamai.steamstatic.com/steam/apps/${encodeURIComponent(
+      String(appid)
+    )}/header.jpg`
+  );
+
+  if (!src || failed) {
+    return (
+      <div className="w-full h-full flex items-center justify-center text-zinc-700 bg-[#09090b]">
+        <Gamepad2 className="w-6 h-6" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={name}
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailed(true)}
+      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+    />
+  );
+}
 
 export function SteamLibraryModal({ isOpen, onClose }: SteamLibraryModalProps) {
   const queryClient = useQueryClient();
   const [librarySearch, setLibrarySearch] = useState("");
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>("all");
   const [libraryPage, setLibraryPage] = useState(0);
 
   useEffect(() => {
@@ -54,7 +98,7 @@ export function SteamLibraryModal({ isOpen, onClose }: SteamLibraryModalProps) {
     enabled: isOpen && !!profile,
   });
 
-  const { data: radarGames = [] } = useQuery({
+  const { data: radarGames = [] } = useQuery<TrackedGame[]>({
     queryKey: ["gaming-preferences"],
     queryFn: gamingApi.getTrackedGames,
     enabled: isOpen && !!profile,
@@ -80,14 +124,12 @@ export function SteamLibraryModal({ isOpen, onClose }: SteamLibraryModalProps) {
   });
 
   const radarAppIds = useMemo(
-    () => new Set((radarGames as any[]).map((g) => g.steamAppId)),
+    () => new Set((radarGames || []).map((g) => g.steamAppId)),
     [radarGames]
   );
 
-  const toggleRadar = (game: any) => {
-    const existing = (radarGames as any[]).find(
-      (g) => g.steamAppId === game.appid
-    );
+  const toggleRadar = (game: SteamGame) => {
+    const existing = (radarGames || []).find((g) => g.steamAppId === game.appid);
     if (existing) {
       removeRadarMutation.mutate(existing.id);
     } else {
@@ -95,23 +137,25 @@ export function SteamLibraryModal({ isOpen, onClose }: SteamLibraryModalProps) {
     }
   };
 
-  const allGames = useMemo(
-    () =>
-      (library?.response?.games ?? [])
-        .slice()
-        .sort(
-          (a: any, b: any) =>
-            (b.playtime_forever ?? 0) - (a.playtime_forever ?? 0)
-        ),
-    [library]
-  );
+  const allGames: SteamGame[] = useMemo(() => {
+    const games = Array.isArray(library?.response?.games)
+      ? (library.response.games as SteamGame[])
+      : [];
+    return games
+      .slice()
+      .sort((a, b) => (b.playtime_forever ?? 0) - (a.playtime_forever ?? 0));
+  }, [library]);
 
   const filteredGames = useMemo(() => {
     const q = librarySearch.toLowerCase().trim();
-    return q
-      ? allGames.filter((g: any) => g.name.toLowerCase().includes(q))
-      : allGames;
-  }, [allGames, librarySearch]);
+    return allGames.filter((g) => {
+      if (libraryFilter === "radar" && !radarAppIds.has(g.appid)) return false;
+      if (libraryFilter === "unplayed" && (g.playtime_forever ?? 0) > 0)
+        return false;
+      if (q && !(g.name || "").toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [allGames, librarySearch, libraryFilter, radarAppIds]);
 
   const totalPages = Math.ceil(filteredGames.length / PAGE_SIZE);
   const pagedGames = filteredGames.slice(
@@ -122,50 +166,54 @@ export function SteamLibraryModal({ isOpen, onClose }: SteamLibraryModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/80 backdrop-blur-md"
+        className="absolute inset-0 bg-black/80"
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Modal Container */}
-      <div className="relative w-full max-w-5xl bg-[#0e0e11] border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 z-10">
-        {/* Glow Superior Suave */}
-        <div className="absolute top-0 right-1/4 w-96 h-40 bg-blue-600/10 rounded-full blur-[100px] pointer-events-none" />
-
-        {/* Header do Modal */}
-        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-white/5 relative z-10 bg-black/40 backdrop-blur-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-              <Gamepad2 className="w-5 h-5" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Biblioteca Steam"
+        className="relative w-full max-w-5xl bg-[#111113] border border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] z-10"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-white/[0.06]">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-zinc-300 shrink-0">
+              <Gamepad2 className="w-4 h-4" />
             </div>
-            <div>
-              <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                Biblioteca Steam
-                <span className="text-xs font-normal text-zinc-400">
-                  ({library?.response?.game_count || 0} jogos)
+            <div className="min-w-0">
+              <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 truncate">
+                <span>Biblioteca Steam</span>
+                <span className="text-xs font-normal text-zinc-500 tabular-nums">
+                  ({library?.response?.game_count || 0})
                 </span>
               </h3>
-              <p className="text-xs text-zinc-400">
-                Pesquise seus títulos e selecione os jogos para acompanhar atualizações.
+              <p className="text-xs text-zinc-400 truncate">
+                Pesquise títulos e ative o radar para acompanhar atualizações.
               </p>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-zinc-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
+            className="p-2 text-zinc-400 hover:text-white hover:bg-white/[0.06] rounded-xl transition-colors shrink-0"
             title="Fechar (Esc)"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Barra de Busca e Filtros */}
-        <div className="p-4 sm:p-6 pb-2 border-b border-white/5 bg-black/20 flex flex-col sm:flex-row items-center justify-between gap-3 relative z-10">
-          <div className="relative w-full sm:max-w-md">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+        {/* Search & Filter Bar */}
+        <div className="p-4 sm:px-5 sm:py-3.5 border-b border-white/[0.06] bg-[#09090b]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="relative w-full sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
             <input
               type="text"
               value={librarySearch}
@@ -173,91 +221,94 @@ export function SteamLibraryModal({ isOpen, onClose }: SteamLibraryModalProps) {
                 setLibrarySearch(e.target.value);
                 setLibraryPage(0);
               }}
-              placeholder="Buscar jogo na biblioteca..."
-              className="w-full bg-black/50 border border-white/10 focus:border-blue-500/50 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder:text-zinc-600 focus:outline-none transition-colors"
+              placeholder="Buscar jogo..."
+              className="w-full bg-[#111113] border border-white/[0.08] focus:border-white/25 rounded-xl pl-9 pr-3.5 py-2 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none transition-colors"
               autoFocus
             />
           </div>
 
-          <div className="text-xs text-zinc-400 flex items-center gap-2">
-            <span>
-              Mostrando <strong className="text-white">{filteredGames.length}</strong> de {allGames.length}
+          <div className="flex items-center justify-between sm:justify-end gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <FilterPill
+                active={libraryFilter === "all"}
+                onClick={() => {
+                  setLibraryFilter("all");
+                  setLibraryPage(0);
+                }}
+                accent="blue"
+              >
+                Todos
+              </FilterPill>
+              <FilterPill
+                active={libraryFilter === "radar"}
+                onClick={() => {
+                  setLibraryFilter("radar");
+                  setLibraryPage(0);
+                }}
+                accent="blue"
+              >
+                No Radar ({radarAppIds.size})
+              </FilterPill>
+              <FilterPill
+                active={libraryFilter === "unplayed"}
+                onClick={() => {
+                  setLibraryFilter("unplayed");
+                  setLibraryPage(0);
+                }}
+                accent="blue"
+              >
+                Não jogados
+              </FilterPill>
+            </div>
+            <span className="text-xs text-zinc-500 tabular-nums hidden md:inline">
+              {filteredGames.length} de {allGames.length}
             </span>
           </div>
         </div>
 
-        {/* Grid de Jogos com Scroll */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+        {/* Games Grid */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
           {isLoading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
               {Array.from({ length: 10 }).map((_, idx) => (
                 <div
                   key={idx}
-                  className="bg-[#121214]/40 border border-white/5 rounded-2xl p-2.5 animate-pulse"
+                  className="bg-[#09090b] border border-white/[0.06] rounded-2xl p-2.5 animate-pulse"
                 >
-                  <div className="aspect-video bg-white/5 rounded-xl mb-2" />
-                  <div className="h-4 bg-white/5 rounded w-3/4 mb-1" />
-                  <div className="h-3 bg-white/5 rounded w-1/2" />
+                  <div className="aspect-video bg-white/[0.05] rounded-xl mb-2" />
+                  <div className="h-3.5 bg-white/[0.05] rounded w-3/4 mb-1.5" />
+                  <div className="h-3 bg-white/[0.04] rounded w-1/2" />
                 </div>
               ))}
             </div>
           ) : pagedGames.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
-              {pagedGames.map((game: any) => {
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              {pagedGames.map((game) => {
                 const isMonitored = radarAppIds.has(game.appid);
                 const hoursPlayed = Math.round((game.playtime_forever ?? 0) / 60);
+                const steamUrl = sanitizeUrl(
+                  `https://store.steampowered.com/app/${encodeURIComponent(
+                    String(game.appid)
+                  )}`
+                );
 
                 return (
                   <div
                     key={game.appid}
-                    className={`group bg-[#121214]/60 border rounded-2xl p-2.5 transition-all hover:bg-white/[0.03] ${
+                    className={`group bg-[#09090b] border rounded-2xl p-2.5 transition-colors flex flex-col ${
                       isMonitored
-                        ? "border-blue-500/40 shadow-[0_0_15px_rgba(59,130,246,0.12)]"
-                        : "border-white/5 hover:border-white/15"
+                        ? "border-emerald-500/30"
+                        : "border-white/[0.06] hover:border-white/[0.12]"
                     }`}
                   >
-                    <div className="relative aspect-video mb-2.5 rounded-xl overflow-hidden bg-black/60 shadow-md">
-                      <img
-                        src={`https://cdn.akamai.steamstatic.com/steam/apps/${game.appid}/header.jpg`}
-                        alt={game.name}
-                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                        loading="lazy"
-                        onError={(e: any) => {
-                          e.target.style.display = "none";
-                        }}
+                    <div className="relative aspect-video mb-2 rounded-xl overflow-hidden bg-[#111113]">
+                      <LibraryGameCover
+                        appid={game.appid}
+                        name={game.name || "Jogo Steam"}
                       />
 
-                      {/* Overlay com Ações */}
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-2">
-                        <button
-                          onClick={() => toggleRadar(game)}
-                          title={
-                            isMonitored
-                              ? "Remover do Radar de Notícias"
-                              : "Acompanhar notícias deste jogo"
-                          }
-                          className={`p-2 rounded-xl transition-all ${
-                            isMonitored
-                              ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30"
-                              : "bg-white/10 hover:bg-white/20 text-white"
-                          }`}
-                        >
-                          <Rss className="w-4 h-4" />
-                        </button>
-                        <a
-                          href={`https://store.steampowered.com/app/${game.appid}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="Abrir na Steam"
-                          className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                        </a>
-                      </div>
-
-                      {/* Badge se já está no Radar */}
                       {isMonitored && (
-                        <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-blue-600/90 rounded text-[9px] font-bold text-white flex items-center gap-1 shadow-md">
+                        <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-emerald-500/15 border border-emerald-500/30 rounded text-[9px] font-semibold text-emerald-400 flex items-center gap-1">
                           <Rss className="w-2.5 h-2.5" />
                           <span>Radar</span>
                         </div>
@@ -265,51 +316,81 @@ export function SteamLibraryModal({ isOpen, onClose }: SteamLibraryModalProps) {
                     </div>
 
                     <h5 className="text-xs font-semibold text-zinc-200 line-clamp-1 mb-1 group-hover:text-white transition-colors">
-                      {game.name}
+                      {game.name || `App ${game.appid}`}
                     </h5>
 
-                    <div className="flex items-center justify-between text-[10px] text-zinc-500">
-                      <span className="flex items-center gap-1">
+                    <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-auto pt-1">
+                      <span className="flex items-center gap-1 tabular-nums">
                         <Clock className="w-3 h-3 text-zinc-600" />
-                        {hoursPlayed > 0 ? `${hoursPlayed}h jogadas` : "Não jogado"}
+                        {hoursPlayed > 0 ? `${hoursPlayed}h` : "0h"}
                       </span>
-                      <span className="font-mono text-[9px] text-zinc-600">
-                        {game.appid}
-                      </span>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleRadar(game)}
+                          title={
+                            isMonitored
+                              ? "Remover do Radar de Notícias"
+                              : "Acompanhar notícias deste jogo"
+                          }
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            isMonitored
+                              ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25"
+                              : "bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-200"
+                          }`}
+                        >
+                          <Rss className="w-3 h-3" />
+                        </button>
+                        {steamUrl && (
+                          <a
+                            href={steamUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Abrir na Steam"
+                            className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-200 transition-colors"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div className="py-16 text-center">
-              <Gamepad2 className="w-10 h-10 text-zinc-700 mx-auto mb-3" />
-              <p className="text-sm font-medium text-zinc-400">
-                Nenhum jogo encontrado com esse termo.
-              </p>
-            </div>
+            <EmptyState
+              icon={<Gamepad2 className="w-5 h-5" />}
+              title="Nenhum jogo encontrado"
+              description="Tente ajustar o termo de busca ou o filtro selecionado."
+            />
           )}
         </div>
 
-        {/* Footer com Paginação */}
+        {/* Pagination Footer */}
         {totalPages > 1 && (
-          <div className="p-3 sm:p-4 border-t border-white/5 bg-black/40 flex items-center justify-between relative z-10">
-            <span className="text-xs text-zinc-500">
+          <div className="p-3 sm:px-5 border-t border-white/[0.06] bg-[#09090b]/60 flex items-center justify-between">
+            <span className="text-xs text-zinc-500 tabular-nums">
               Página {libraryPage + 1} de {totalPages}
             </span>
 
             <div className="flex items-center gap-2">
               <button
+                type="button"
                 onClick={() => setLibraryPage((p) => Math.max(0, p - 1))}
                 disabled={libraryPage === 0}
-                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 rounded-xl text-xs font-semibold text-zinc-300 transition-colors flex items-center gap-1"
+                className="px-3 py-1.5 bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] disabled:opacity-30 rounded-xl text-xs font-medium text-zinc-200 transition-colors flex items-center gap-1"
               >
                 <ChevronLeft className="w-3.5 h-3.5" /> Anterior
               </button>
               <button
-                onClick={() => setLibraryPage((p) => Math.min(totalPages - 1, p + 1))}
+                type="button"
+                onClick={() =>
+                  setLibraryPage((p) => Math.min(totalPages - 1, p + 1))
+                }
                 disabled={libraryPage === totalPages - 1}
-                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 rounded-xl text-xs font-semibold text-zinc-300 transition-colors flex items-center gap-1"
+                className="px-3 py-1.5 bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] disabled:opacity-30 rounded-xl text-xs font-medium text-zinc-200 transition-colors flex items-center gap-1"
               >
                 Próxima <ChevronRight className="w-3.5 h-3.5" />
               </button>

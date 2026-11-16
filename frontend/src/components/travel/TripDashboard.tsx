@@ -3,7 +3,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   Compass,
   Clock,
@@ -17,8 +16,6 @@ import {
   ItineraryItem,
   PlaceToVisit,
   ShoppingItem,
-  TripTask,
-  PackingItem,
 } from "@/lib/types";
 import { TripHeader } from "@/components/travel/TripHeader";
 import { TripTabsNav, TravelTabType } from "@/components/travel/TripTabsNav";
@@ -28,6 +25,7 @@ import { TripShoppingTab } from "@/components/travel/tabs/TripShoppingTab";
 import { TripNotesTab } from "@/components/travel/tabs/TripNotesTab";
 import { TripTransportHotelTab } from "@/components/travel/tabs/TripTransportHotelTab";
 import { TripMapTab } from "@/components/travel/tabs/TripMapTab";
+import { SurfacePanel, EmptyState } from "@/components/ui/page-shell";
 import { toast } from "sonner";
 
 interface TripDashboardProps {
@@ -42,9 +40,11 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
   // Modals state
   const [isTripModalOpen, setIsTripModalOpen] = useState(false);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
+  const [isSavingTrip, setIsSavingTrip] = useState(false);
 
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ItineraryItem | null>(null);
+  const [isSavingActivity, setIsSavingActivity] = useState(false);
 
   // Active day string in Itinerary
   const [selectedDayStr, setSelectedDayStr] = useState<string | null>(null);
@@ -88,8 +88,8 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
     enabled: !!tripId && !isNaN(tripId),
   });
 
-  // Parse JSON collections safely (handles direct arrays, strings, double-encoded JSON, or wrapped objects)
-  const parseJsonCollection = <T,>(rawInput: any): T[] => {
+  // Parse JSON collections safely
+  const parseJsonCollection = <T,>(rawInput: unknown): T[] => {
     if (!rawInput) return [];
     try {
       let current: any = rawInput;
@@ -98,13 +98,11 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
           current = JSON.parse(current);
         } catch {}
       }
-      // If double-encoded as a string
       if (typeof current === "string") {
         try {
           current = JSON.parse(current);
         } catch {}
       }
-      // If wrapped in an object like { placesJson: ... } or { shoppingJson: ... }
       if (current && typeof current === "object" && !Array.isArray(current)) {
         for (const key of Object.keys(current)) {
           const val = current[key];
@@ -135,29 +133,22 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
     );
   }, [tripDetails?.shoppingJson, (tripDetails as any)?.shopping_json]);
 
-  const tasksList: TripTask[] = useMemo(() => {
-    return parseJsonCollection<TripTask>(
-      tripDetails?.tasksJson ?? (tripDetails as any)?.tasks_json
-    );
-  }, [tripDetails?.tasksJson, (tripDetails as any)?.tasks_json]);
-
-  const packingList: PackingItem[] = useMemo(() => {
-    return parseJsonCollection<PackingItem>(
-      tripDetails?.checklistJson ?? (tripDetails as any)?.checklist_json
-    );
-  }, [tripDetails?.checklistJson, (tripDetails as any)?.checklist_json]);
-
   // Trip Days Range
   const tripDays = useMemo(() => {
     if (!tripDetails?.startDate || !tripDetails?.endDate) return [];
-    const start = new Date(tripDetails.startDate + "T00:00:00");
-    const end = new Date(tripDetails.endDate + "T00:00:00");
-    const days: string[] = [];
+    const startClean = tripDetails.startDate.split("T")[0];
+    const endClean = tripDetails.endDate.split("T")[0];
+    const start = new Date(`${startClean}T00:00:00`);
+    const end = new Date(`${endClean}T00:00:00`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return [];
 
-    let current = new Date(start);
-    while (current <= end) {
+    const days: string[] = [];
+    const current = new Date(start);
+    let safety = 0;
+    while (current <= end && safety < 180) {
       days.push(current.toISOString().split("T")[0]);
       current.setDate(current.getDate() + 1);
+      safety += 1;
     }
     return days;
   }, [tripDetails?.startDate, tripDetails?.endDate]);
@@ -191,42 +182,44 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
         const geoData = await geoRes.json();
         if (!active) return;
 
-        if (geoData && geoData.length > 0) {
+        if (Array.isArray(geoData) && geoData.length > 0) {
           const lat = parseFloat(geoData[0].lat);
           const lon = parseFloat(geoData[0].lon);
 
-          const weatherRes = await fetch(
-            `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`
-          );
-          const weatherData = await weatherRes.json();
-          if (!active) return;
+          if (!isNaN(lat) && !isNaN(lon)) {
+            const weatherRes = await fetch(
+              `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`
+            );
+            const weatherData = await weatherRes.json();
+            if (!active) return;
 
-          if (weatherData && weatherData.current_weather) {
-            const cur = weatherData.current_weather;
-            const code = cur.weathercode;
+            if (weatherData && weatherData.current_weather) {
+              const cur = weatherData.current_weather;
+              const code = cur.weathercode;
 
-            let condition = "Limpo";
-            let icon = "☀️";
-            if (code === 0) { condition = "Céu Limpo"; icon = "☀️"; }
-            else if (code >= 1 && code <= 3) { condition = "Parcialmente Nublado"; icon = "⛅"; }
-            else if (code >= 45 && code <= 48) { condition = "Nevoeiro"; icon = "🌫️"; }
-            else if (code >= 51 && code <= 55) { condition = "Garoa"; icon = "🌦️"; }
-            else if (code >= 61 && code <= 65) { condition = "Chuva"; icon = "🌧️"; }
-            else if (code >= 71 && code <= 77) { condition = "Neve"; icon = "❄️"; }
-            else if (code >= 80 && code <= 82) { condition = "Pancadas de Chuva"; icon = "🌧️"; }
-            else if (code >= 95 && code <= 99) { condition = "Tempestade"; icon = "⛈️"; }
+              let condition = "Limpo";
+              let icon = "☀️";
+              if (code === 0) { condition = "Céu Limpo"; icon = "☀️"; }
+              else if (code >= 1 && code <= 3) { condition = "Parcialmente Nublado"; icon = "⛅"; }
+              else if (code >= 45 && code <= 48) { condition = "Nevoeiro"; icon = "🌫️"; }
+              else if (code >= 51 && code <= 55) { condition = "Garoa"; icon = "🌦️"; }
+              else if (code >= 61 && code <= 65) { condition = "Chuva"; icon = "🌧️"; }
+              else if (code >= 71 && code <= 77) { condition = "Neve"; icon = "❄️"; }
+              else if (code >= 80 && code <= 82) { condition = "Pancadas de Chuva"; icon = "🌧️"; }
+              else if (code >= 95 && code <= 99) { condition = "Tempestade"; icon = "⛈️"; }
 
-            setWeather({
-              temp: cur.temperature,
-              windSpeed: cur.windspeed,
-              humidity: 60,
-              condition,
-              icon,
-            });
+              setWeather({
+                temp: cur.temperature,
+                windSpeed: cur.windspeed,
+                humidity: 60,
+                condition,
+                icon,
+              });
+            }
           }
         }
-      } catch (err) {
-        console.error("Failed to fetch weather", err);
+      } catch {
+        // Silently degrade weather widget
       } finally {
         if (active) setLoadingWeather(false);
       }
@@ -242,9 +235,9 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
   const handleOpenTripModal = (trip: Trip | null = null) => {
     if (trip) {
       setEditingTrip(trip);
-      setTripDestination(trip.destination);
-      setTripStartDate(trip.startDate);
-      setTripEndDate(trip.endDate);
+      setTripDestination(trip.destination || "");
+      setTripStartDate((trip.startDate || "").split("T")[0]);
+      setTripEndDate((trip.endDate || "").split("T")[0]);
       setTripFlightInfo(trip.flightInfo || "");
       setTripHotelInfo(trip.hotelInfo || "");
       setTripNotes(trip.notes || "");
@@ -262,19 +255,29 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
 
   const handleSaveTrip = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tripDestination || !tripStartDate || !tripEndDate) {
+    const trimmedDest = tripDestination.trim();
+    const start = tripStartDate.split("T")[0];
+    const end = tripEndDate.split("T")[0];
+
+    if (!trimmedDest || !start || !end) {
       toast.error("Por favor, preencha o destino e as datas.");
       return;
     }
 
+    if (end < start) {
+      toast.error("A data de volta não pode ser anterior à data de ida.");
+      return;
+    }
+
+    setIsSavingTrip(true);
     try {
       const payload = {
-        destination: tripDestination,
-        startDate: tripStartDate,
-        endDate: tripEndDate,
-        flightInfo: tripFlightInfo,
-        hotelInfo: tripHotelInfo,
-        notes: tripNotes,
+        destination: trimmedDest,
+        startDate: start,
+        endDate: end,
+        flightInfo: tripFlightInfo.trim(),
+        hotelInfo: tripHotelInfo.trim(),
+        notes: tripNotes.trim(),
         checklistJson: editingTrip?.checklistJson,
         placesJson: editingTrip?.placesJson,
         shoppingJson: editingTrip?.shoppingJson,
@@ -293,7 +296,9 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
       queryClient.invalidateQueries({ queryKey: ["trip", tripId] });
       setIsTripModalOpen(false);
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Erro ao salvar viagem");
+      toast.error(err?.response?.data?.message || "Erro ao salvar viagem");
+    } finally {
+      setIsSavingTrip(false);
     }
   };
 
@@ -305,7 +310,7 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
       toast.success("Viagem excluída.");
       queryClient.invalidateQueries({ queryKey: ["trips"] });
       router.push("/travel");
-    } catch (err) {
+    } catch {
       toast.error("Erro ao deletar viagem.");
     }
   };
@@ -314,8 +319,8 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
   const handleOpenActivityModal = (activity: ItineraryItem | null = null) => {
     if (activity) {
       setEditingActivity(activity);
-      setActTitle(activity.title);
-      setActDateTime(activity.dateTime.slice(0, 16));
+      setActTitle(activity.title || "");
+      setActDateTime(activity.dateTime ? activity.dateTime.slice(0, 16) : "");
       setActLocationName(activity.locationName || "");
       setActAddress(activity.address || "");
       setActCategory(activity.category || "ATTRACTION");
@@ -339,21 +344,26 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
 
   const handleSaveActivity = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!actTitle || !actDateTime || !tripId) {
+    const trimmedTitle = actTitle.trim();
+    if (!trimmedTitle || !actDateTime || !tripId) {
       toast.error("O título e a data/hora são obrigatórios.");
       return;
     }
 
+    setIsSavingActivity(true);
     try {
+      const parsedLat = actLat ? parseFloat(actLat) : undefined;
+      const parsedLng = actLng ? parseFloat(actLng) : undefined;
+
       const payload = {
-        title: actTitle,
+        title: trimmedTitle,
         dateTime: actDateTime,
-        locationName: actLocationName || undefined,
-        address: actAddress || undefined,
+        locationName: actLocationName.trim() || undefined,
+        address: actAddress.trim() || undefined,
         category: actCategory,
-        notes: actNotes || undefined,
-        latitude: actLat ? parseFloat(actLat) : undefined,
-        longitude: actLng ? parseFloat(actLng) : undefined,
+        notes: actNotes.trim() || undefined,
+        latitude: parsedLat !== undefined && !isNaN(parsedLat) ? parsedLat : undefined,
+        longitude: parsedLng !== undefined && !isNaN(parsedLng) ? parsedLng : undefined,
         completed: editingActivity ? editingActivity.completed : false,
       };
 
@@ -368,7 +378,9 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
       queryClient.invalidateQueries({ queryKey: ["trip", tripId] });
       setIsActivityModalOpen(false);
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Erro ao salvar atividade");
+      toast.error(err?.response?.data?.message || "Erro ao salvar atividade");
+    } finally {
+      setIsSavingActivity(false);
     }
   };
 
@@ -376,7 +388,7 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
     try {
       await travelApi.toggleItineraryItem(tripId, activityId);
       queryClient.invalidateQueries({ queryKey: ["trip", tripId] });
-    } catch (err) {
+    } catch {
       toast.error("Erro ao alterar status da atividade");
     }
   };
@@ -387,7 +399,7 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
       await travelApi.deleteItineraryItem(tripId, activityId);
       toast.success("Atividade removida.");
       queryClient.invalidateQueries({ queryKey: ["trip", tripId] });
-    } catch (err) {
+    } catch {
       toast.error("Erro ao deletar atividade");
     }
   };
@@ -395,8 +407,8 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
   // Schedule place to itinerary
   const handleSchedulePlaceToItinerary = (place: PlaceToVisit) => {
     setEditingActivity(null);
-    setActTitle(place.name);
-    setActLocationName(place.name);
+    setActTitle(place.name || "");
+    setActLocationName(place.name || "");
     setActAddress(place.address || place.neighborhood || "");
     setActCategory(place.category || "ATTRACTION");
     setActNotes(place.notes || "");
@@ -407,12 +419,11 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
     setIsActivityModalOpen(true);
   };
 
-  // Handlers - Persistence for Collections with Optimistic Update and Resilient Fallback
+  // Handlers - Persistence for Collections
   const handleSavePlaces = async (updated: PlaceToVisit[]) => {
     if (!tripDetails) return;
     const placesJsonStr = JSON.stringify(updated);
 
-    // 1. Immediate optimistic UI update
     queryClient.setQueryData<Trip>(["trip", tripId], (old) => {
       if (!old) return old;
       const next = { ...old, placesJson: placesJsonStr };
@@ -436,8 +447,7 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
           tasksJson: tripDetails.tasksJson ?? (tripDetails as any)?.tasks_json ?? "",
         };
         updatedTrip = await travelApi.updateTrip(tripId, payload);
-      } catch (putErr) {
-        console.warn("PUT updateTrip failed, falling back to PATCH:", putErr);
+      } catch {
         updatedTrip = await travelApi.updatePlaces(tripId, placesJsonStr);
       }
 
@@ -453,8 +463,6 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
       queryClient.invalidateQueries({ queryKey: ["trips"] });
       toast.success("Lugares atualizados com sucesso!");
     } catch (err: any) {
-      console.error("Erro ao salvar lugares:", err);
-      // Revert cache on error
       queryClient.invalidateQueries({ queryKey: ["trip", tripId] });
       toast.error(err?.response?.data?.message || "Erro ao salvar lugares");
     }
@@ -464,7 +472,6 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
     if (!tripDetails) return;
     const shoppingJsonStr = JSON.stringify(updated);
 
-    // 1. Immediate optimistic UI update
     queryClient.setQueryData<Trip>(["trip", tripId], (old) => {
       if (!old) return old;
       const next = { ...old, shoppingJson: shoppingJsonStr };
@@ -488,8 +495,7 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
           tasksJson: tripDetails.tasksJson ?? (tripDetails as any)?.tasks_json ?? "",
         };
         updatedTrip = await travelApi.updateTrip(tripId, payload);
-      } catch (putErr) {
-        console.warn("PUT updateTrip failed, falling back to PATCH:", putErr);
+      } catch {
         updatedTrip = await travelApi.updateShopping(tripId, shoppingJsonStr);
       }
 
@@ -505,7 +511,6 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
       queryClient.invalidateQueries({ queryKey: ["trips"] });
       toast.success("Lista de compras atualizada com sucesso!");
     } catch (err: any) {
-      console.error("Erro ao salvar lista de compras:", err);
       queryClient.invalidateQueries({ queryKey: ["trip", tripId] });
       toast.error(err?.response?.data?.message || "Erro ao salvar lista de compras");
     }
@@ -528,13 +533,13 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
           endDate: (tripDetails.endDate || "").split("T")[0],
           flightInfo: tripDetails.flightInfo || "",
           hotelInfo: tripDetails.hotelInfo || "",
-          notes: notes,
+          notes,
           checklistJson: tripDetails.checklistJson ?? (tripDetails as any)?.checklist_json ?? "",
           placesJson: tripDetails.placesJson ?? (tripDetails as any)?.places_json ?? "",
           shoppingJson: tripDetails.shoppingJson ?? (tripDetails as any)?.shopping_json ?? "",
           tasksJson: tripDetails.tasksJson ?? (tripDetails as any)?.tasks_json ?? "",
         });
-      } catch (putErr) {
+      } catch {
         updatedTrip = await travelApi.updateNotes(tripId, notes);
       }
 
@@ -544,7 +549,6 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
       queryClient.invalidateQueries({ queryKey: ["trips"] });
       toast.success("Anotações salvas com sucesso!");
     } catch (err: any) {
-      console.error("Erro ao salvar anotações:", err);
       queryClient.invalidateQueries({ queryKey: ["trip", tripId] });
       toast.error(err?.response?.data?.message || "Erro ao salvar anotações");
       throw err;
@@ -554,10 +558,10 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
   // Loading state
   if (isLoadingDetails) {
     return (
-      <div className="space-y-6">
-        <div className="h-44 rounded-3xl bg-zinc-900/50 animate-pulse border border-white/5" />
-        <div className="h-12 w-full max-w-md rounded-2xl bg-zinc-900/50 animate-pulse border border-white/5" />
-        <div className="h-96 rounded-3xl bg-zinc-900/50 animate-pulse border border-white/5" />
+      <div className="space-y-5">
+        <div className="h-44 rounded-2xl bg-[#111113] animate-pulse border border-white/[0.06]" />
+        <div className="h-11 w-full max-w-md rounded-xl bg-[#111113] animate-pulse border border-white/[0.06]" />
+        <div className="h-96 rounded-2xl bg-[#111113] animate-pulse border border-white/[0.06]" />
       </div>
     );
   }
@@ -565,31 +569,28 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
   // Error / Not Found state
   if (isError || !tripDetails) {
     return (
-      <div className="text-center py-20 px-4 bg-zinc-900/20 rounded-3xl border border-dashed border-white/10 max-w-md mx-auto">
-        <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-400 flex items-center justify-center mx-auto mb-4 border border-red-500/20">
-          <AlertCircle size={24} />
-        </div>
-        <h3 className="text-lg font-bold text-white">Viagem não encontrada</h3>
-        <p className="text-zinc-400 text-xs mt-1.5 mb-6">
-          A viagem de ID #{tripId} não existe ou foi removida.
-        </p>
-        <button
-          onClick={() => router.push("/travel")}
-          className="inline-flex items-center gap-2 bg-sky-500 hover:bg-sky-400 text-black font-bold text-xs px-5 py-2.5 rounded-xl transition-all cursor-pointer"
-        >
-          <ArrowLeft size={14} />
-          <span>Voltar para Minhas Viagens</span>
-        </button>
+      <div className="py-12">
+        <EmptyState
+          icon={<AlertCircle size={26} className="text-red-400" />}
+          title="Viagem não encontrada"
+          description={`A viagem de ID #${tripId} não existe ou foi removida.`}
+          action={
+            <button
+              type="button"
+              onClick={() => router.push("/travel")}
+              className="inline-flex items-center gap-2 bg-zinc-100 text-zinc-950 hover:bg-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-colors cursor-pointer"
+            >
+              <ArrowLeft size={14} />
+              <span>Voltar para Minhas Viagens</span>
+            </button>
+          }
+        />
       </div>
     );
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-    >
+    <div>
       {/* Top Header */}
       <TripHeader
         trip={tripDetails}
@@ -614,331 +615,327 @@ export function TripDashboard({ tripId }: TripDashboardProps) {
       />
 
       {/* Tab Contents */}
-      <div className="bg-zinc-950/40 border border-white/5 rounded-3xl p-4 sm:p-7 shadow-xl">
-        {activeTab === "itinerary" && (
-          <TripItineraryTab
-            trip={tripDetails}
-            selectedDayStr={selectedDayStr}
-            onSelectDay={(day) => setSelectedDayStr(day)}
-            onOpenActivityModal={(act) => handleOpenActivityModal(act)}
-            onToggleActivity={handleToggleActivity}
-            onDeleteActivity={handleDeleteActivity}
-          />
-        )}
+      <SurfacePanel accent="sky" className="p-0" noPadding>
+        <div className="p-4 sm:p-6">
+          {activeTab === "itinerary" && (
+            <TripItineraryTab
+              trip={tripDetails}
+              selectedDayStr={selectedDayStr}
+              onSelectDay={(day) => setSelectedDayStr(day)}
+              onOpenActivityModal={(act) => handleOpenActivityModal(act)}
+              onToggleActivity={handleToggleActivity}
+              onDeleteActivity={handleDeleteActivity}
+            />
+          )}
 
-        {activeTab === "places" && (
-          <TripPlacesTab
-            places={placesList}
-            onSavePlaces={handleSavePlaces}
-            onSchedulePlace={handleSchedulePlaceToItinerary}
-          />
-        )}
+          {activeTab === "places" && (
+            <TripPlacesTab
+              places={placesList}
+              onSavePlaces={handleSavePlaces}
+              onSchedulePlace={handleSchedulePlaceToItinerary}
+            />
+          )}
 
-        {activeTab === "shopping" && (
-          <TripShoppingTab
-            items={shoppingList}
-            onSaveShopping={handleSaveShopping}
-          />
-        )}
+          {activeTab === "shopping" && (
+            <TripShoppingTab
+              items={shoppingList}
+              onSaveShopping={handleSaveShopping}
+            />
+          )}
 
-        {activeTab === "notes" && (
-          <TripNotesTab
-            notes={tripDetails.notes || ""}
-            onSaveNotes={handleSaveNotes}
-          />
-        )}
+          {activeTab === "notes" && (
+            <TripNotesTab
+              notes={tripDetails.notes || ""}
+              onSaveNotes={handleSaveNotes}
+            />
+          )}
 
-        {activeTab === "transport" && (
-          <TripTransportHotelTab
-            trip={tripDetails}
-            onEditTrip={() => handleOpenTripModal(tripDetails)}
-          />
-        )}
+          {activeTab === "transport" && (
+            <TripTransportHotelTab
+              trip={tripDetails}
+              onEditTrip={() => handleOpenTripModal(tripDetails)}
+            />
+          )}
 
-        {activeTab === "map" && (
-          <TripMapTab
-            trip={tripDetails}
-            items={tripDetails.itinerary || []}
-            places={placesList}
-          />
-        )}
-      </div>
+          {activeTab === "map" && (
+            <TripMapTab
+              trip={tripDetails}
+              items={tripDetails.itinerary || []}
+              places={placesList}
+            />
+          )}
+        </div>
+      </SurfacePanel>
 
       {/* ========================================================
          MODAL: EDITAR VIAGEM
          ======================================================== */}
-      <AnimatePresence>
-        {isTripModalOpen && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsTripModalOpen(false)}
-              className="absolute inset-0 bg-black/75 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative w-full max-w-xl bg-[#09090b] border border-white/10 rounded-3xl p-6 sm:p-7 shadow-2xl z-10"
-            >
-              <div className="flex items-center justify-between pb-4 border-b border-white/5 mb-5">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Compass className="text-sky-400" size={20} />
-                  {editingTrip ? "Editar Viagem" : "Nova Viagem"}
-                </h3>
-                <button
-                  onClick={() => setIsTripModalOpen(false)}
-                  className="text-zinc-500 hover:text-white p-1 cursor-pointer"
-                >
-                  <X size={18} />
-                </button>
+      {isTripModalOpen && (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            onClick={() => setIsTripModalOpen(false)}
+            className="absolute inset-0 bg-black/80"
+          />
+          <div className="relative w-full max-w-xl bg-[#111113] border border-white/[0.08] rounded-2xl p-5 sm:p-6 shadow-2xl z-10 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 border-b border-white/[0.06] mb-5">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Compass className="text-zinc-400" size={18} />
+                {editingTrip ? "Editar Viagem" : "Nova Viagem"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsTripModalOpen(false)}
+                className="text-zinc-500 hover:text-white p-1 rounded-lg hover:bg-white/[0.06] transition-colors cursor-pointer"
+                aria-label="Fechar modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTrip} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Destino da Viagem *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={tripDestination}
+                  onChange={(e) => setTripDestination(e.target.value)}
+                  placeholder="Ex: Tóquio, Paris, Santiago, Nova York..."
+                  className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 transition-colors"
+                />
               </div>
 
-              <form onSubmit={handleSaveTrip} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                    Destino da Viagem *
+                  <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                    Data de Ida *
                   </label>
                   <input
-                    type="text"
+                    type="date"
                     required
-                    value={tripDestination}
-                    onChange={(e) => setTripDestination(e.target.value)}
-                    placeholder="Ex: Tóquio, Paris, Santiago, Nova York..."
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition-colors"
+                    value={tripStartDate}
+                    onChange={(e) => setTripStartDate(e.target.value)}
+                    className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-white/25 transition-colors"
                   />
                 </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                      Data de Ida *
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      value={tripStartDate}
-                      onChange={(e) => setTripStartDate(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-sky-500 transition-colors"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                      Data de Volta *
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      value={tripEndDate}
-                      onChange={(e) => setTripEndDate(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-sky-500 transition-colors"
-                    />
-                  </div>
-                </div>
-
                 <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                    Voo & Transporte (Opcional)
+                  <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                    Data de Volta *
                   </label>
-                  <textarea
-                    value={tripFlightInfo}
-                    onChange={(e) => setTripFlightInfo(e.target.value)}
-                    placeholder="Ex: Voo LA-8084 GRU ➔ JFK, Localizador: AB12CD&#10;Assentos: 14A/14B, Terminal 3"
-                    rows={2}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition-colors resize-none"
+                  <input
+                    type="date"
+                    required
+                    value={tripEndDate}
+                    onChange={(e) => setTripEndDate(e.target.value)}
+                    className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-white/25 transition-colors"
                   />
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                    Hotel & Hospedagem (Opcional)
-                  </label>
-                  <textarea
-                    value={tripHotelInfo}
-                    onChange={(e) => setTripHotelInfo(e.target.value)}
-                    placeholder="Ex: Grand Hotel Shinjuku, Check-in: 15h&#10;Reserva #987654, Endereço: 2-Chrome..."
-                    rows={2}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition-colors resize-none"
-                  />
-                </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Voo & Transporte (Opcional)
+                </label>
+                <textarea
+                  value={tripFlightInfo}
+                  onChange={(e) => setTripFlightInfo(e.target.value)}
+                  placeholder="Ex: Voo LA-8084 GRU -> JFK, Localizador: AB12CD"
+                  rows={2}
+                  className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 transition-colors resize-none"
+                />
+              </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                    Notas Gerais
-                  </label>
-                  <textarea
-                    value={tripNotes}
-                    onChange={(e) => setTripNotes(e.target.value)}
-                    placeholder="Dicas de câmbio, regras da alfândega, etc."
-                    rows={2}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition-colors resize-none"
-                  />
-                </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Hotel & Hospedagem (Opcional)
+                </label>
+                <textarea
+                  value={tripHotelInfo}
+                  onChange={(e) => setTripHotelInfo(e.target.value)}
+                  placeholder="Ex: Grand Hotel Shinjuku, Check-in: 15h"
+                  rows={2}
+                  className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 transition-colors resize-none"
+                />
+              </div>
 
-                <div className="flex justify-end gap-3 pt-3 border-t border-white/5 mt-5">
-                  <button
-                    type="button"
-                    onClick={() => setIsTripModalOpen(false)}
-                    className="bg-white/5 hover:bg-white/10 text-zinc-300 font-semibold px-4 py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="bg-sky-500 hover:bg-sky-400 text-black font-bold px-5 py-2.5 rounded-xl text-xs transition-colors cursor-pointer shadow-md shadow-sky-500/20"
-                  >
-                    Salvar Viagem
-                  </button>
-                </div>
-              </form>
-            </motion.div>
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Notas Gerais
+                </label>
+                <textarea
+                  value={tripNotes}
+                  onChange={(e) => setTripNotes(e.target.value)}
+                  placeholder="Dicas de câmbio, regras da alfândega, etc."
+                  rows={2}
+                  className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 transition-colors resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-4 border-t border-white/[0.06]">
+                <button
+                  type="button"
+                  onClick={() => setIsTripModalOpen(false)}
+                  className="bg-white/[0.05] text-zinc-200 border border-white/[0.08] hover:bg-white/[0.1] font-medium px-4 py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingTrip}
+                  className="bg-zinc-100 text-zinc-950 hover:bg-white disabled:opacity-50 font-semibold px-5 py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  {isSavingTrip ? "Salvando..." : "Salvar Viagem"}
+                </button>
+              </div>
+            </form>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
 
       {/* ========================================================
          MODAL: NOVA / EDITAR ATIVIDADE NO ROTEIRO
          ======================================================== */}
-      <AnimatePresence>
-        {isActivityModalOpen && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsActivityModalOpen(false)}
-              className="absolute inset-0 bg-black/75 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative w-full max-w-xl bg-[#09090b] border border-white/10 rounded-3xl p-6 sm:p-7 shadow-2xl z-10"
-            >
-              <div className="flex items-center justify-between pb-4 border-b border-white/5 mb-5">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Clock className="text-sky-400" size={20} />
-                  {editingActivity ? "Editar Atividade" : "Adicionar Atividade no Roteiro"}
-                </h3>
-                <button
-                  onClick={() => setIsActivityModalOpen(false)}
-                  className="text-zinc-500 hover:text-white p-1 cursor-pointer"
-                >
-                  <X size={18} />
-                </button>
+      {isActivityModalOpen && (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            onClick={() => setIsActivityModalOpen(false)}
+            className="absolute inset-0 bg-black/80"
+          />
+          <div className="relative w-full max-w-xl bg-[#111113] border border-white/[0.08] rounded-2xl p-5 sm:p-6 shadow-2xl z-10 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 border-b border-white/[0.06] mb-5">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Clock className="text-zinc-400" size={18} />
+                {editingActivity ? "Editar Atividade" : "Adicionar Atividade no Roteiro"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsActivityModalOpen(false)}
+                className="text-zinc-500 hover:text-white p-1 rounded-lg hover:bg-white/[0.06] transition-colors cursor-pointer"
+                aria-label="Fechar modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveActivity} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Título da Atividade *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={actTitle}
+                  onChange={(e) => setActTitle(e.target.value)}
+                  placeholder="Ex: Visita ao Museu, Almoço no Bistrô..."
+                  className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 transition-colors"
+                />
               </div>
 
-              <form onSubmit={handleSaveActivity} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                    Título da Atividade *
+                  <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                    Data e Hora *
+                  </label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={actDateTime}
+                    onChange={(e) => setActDateTime(e.target.value)}
+                    className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-white/25 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                    Categoria
+                  </label>
+                  <select
+                    value={actCategory}
+                    onChange={(e) => setActCategory(e.target.value)}
+                    className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-white/25"
+                  >
+                    <option value="ATTRACTION">Passeio / Atração</option>
+                    <option value="FOOD">Gastronomia / Refeição</option>
+                    <option value="TRANSPORT">Transporte / Deslocamento</option>
+                    <option value="LODGING">Hospedagem / Check-in</option>
+                    <option value="SHOPPING">Compras</option>
+                    <option value="LEISURE">Lazer / Descanso</option>
+                    <option value="OTHER">Outro</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                    Nome do Local
                   </label>
                   <input
                     type="text"
-                    required
-                    value={actTitle}
-                    onChange={(e) => setActTitle(e.target.value)}
-                    placeholder="Ex: Visita ao Museu, Almoço no Bistrô..."
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition-colors"
+                    value={actLocationName}
+                    onChange={(e) => setActLocationName(e.target.value)}
+                    placeholder="Ex: Museu do Louvre"
+                    className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 transition-colors"
                   />
                 </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                      Data e Hora *
-                    </label>
-                    <input
-                      type="datetime-local"
-                      required
-                      value={actDateTime}
-                      onChange={(e) => setActDateTime(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-sky-500 transition-colors"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                      Categoria
-                    </label>
-                    <select
-                      value={actCategory}
-                      onChange={(e) => setActCategory(e.target.value)}
-                      className="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-sky-500"
-                    >
-                      <option value="ATTRACTION">📸 Passeio / Atração</option>
-                      <option value="FOOD">🍽️ Gastronomia / Refeição</option>
-                      <option value="TRANSPORT">🚗 Transporte / Deslocamento</option>
-                      <option value="LODGING">🏨 Hospedagem / Check-in</option>
-                      <option value="SHOPPING">🛍️ Compras</option>
-                      <option value="LEISURE">✨ Lazer / Descanso</option>
-                      <option value="OTHER">Outro</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                      Nome do Local
-                    </label>
-                    <input
-                      type="text"
-                      value={actLocationName}
-                      onChange={(e) => setActLocationName(e.target.value)}
-                      placeholder="Ex: Museu do Louvre"
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition-colors"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                      Endereço
-                    </label>
-                    <input
-                      type="text"
-                      value={actAddress}
-                      onChange={(e) => setActAddress(e.target.value)}
-                      placeholder="Ex: Rue de Rivoli, 75001"
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition-colors"
-                    />
-                  </div>
-                </div>
-
                 <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                    Notas / Dicas de Acesso
+                  <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                    Endereço
                   </label>
-                  <textarea
-                    value={actNotes}
-                    onChange={(e) => setActNotes(e.target.value)}
-                    placeholder="Dicas de transporte, ingressos, horários ideais..."
-                    rows={2}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition-colors resize-none"
+                  <input
+                    type="text"
+                    value={actAddress}
+                    onChange={(e) => setActAddress(e.target.value)}
+                    placeholder="Ex: Rue de Rivoli, 75001"
+                    className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 transition-colors"
                   />
                 </div>
+              </div>
 
-                <div className="flex justify-end gap-3 pt-3 border-t border-white/5 mt-4">
-                  <button
-                    type="button"
-                    onClick={() => setIsActivityModalOpen(false)}
-                    className="bg-white/5 hover:bg-white/10 text-zinc-300 font-semibold px-4 py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="bg-sky-500 hover:bg-sky-400 text-black font-bold px-5 py-2.5 rounded-xl text-xs transition-colors cursor-pointer shadow-md shadow-sky-500/20"
-                  >
-                    Salvar Atividade
-                  </button>
-                </div>
-              </form>
-            </motion.div>
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Notas / Dicas de Acesso
+                </label>
+                <textarea
+                  value={actNotes}
+                  onChange={(e) => setActNotes(e.target.value)}
+                  placeholder="Dicas de transporte, ingressos, horários ideais..."
+                  rows={2}
+                  className="w-full bg-[#09090b] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 transition-colors resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-4 border-t border-white/[0.06]">
+                <button
+                  type="button"
+                  onClick={() => setIsActivityModalOpen(false)}
+                  className="bg-white/[0.05] text-zinc-200 border border-white/[0.08] hover:bg-white/[0.1] font-medium px-4 py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingActivity}
+                  className="bg-zinc-100 text-zinc-950 hover:bg-white disabled:opacity-50 font-semibold px-5 py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  {isSavingActivity ? "Salvando..." : "Salvar Atividade"}
+                </button>
+              </div>
+            </form>
           </div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+        </div>
+      )}
+    </div>
   );
 }

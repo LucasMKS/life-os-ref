@@ -1,51 +1,18 @@
+import { BookOpen } from "lucide-react";
 import { ReadingDashboard } from "@/components/reading/reading-page";
-import { Navbar } from "@/components/navbar";
-import { BookOpen, Sparkles } from "lucide-react";
+import { PageShell, PageHeader } from "@/components/ui/page-shell";
 
 export default function ReadingHub() {
   return (
-    <main className="min-h-screen flex flex-col relative bg-[#09090b] text-zinc-100 selection:bg-emerald-500/30 overflow-x-hidden">
-      {/* Background Decorative Elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-600/5 rounded-full blur-[140px]" />
-        <div className="absolute top-[20%] right-[-10%] w-[35%] h-[35%] bg-teal-600/5 rounded-full blur-[140px]" />
-
-        {/* Fine grid pattern overlay */}
-        <div className="absolute inset-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:20px_20px] pointer-events-none" />
-      </div>
-
-      <Navbar />
-
-      <div className="z-10 w-full max-w-[1500px] mx-auto mt-4 md:mt-10 px-4 md:px-8 pb-16 md:pb-24">
-        {/* HEADER SECTION */}
-        <header className="mb-6 md:mb-10 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div className="animate-in slide-in-from-left-6 fade-in duration-500 ease-out">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-white/10 flex items-center justify-center text-emerald-400 shadow-lg">
-                <BookOpen className="w-5 h-5" />
-              </div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl md:text-4xl font-black tracking-tight text-white">
-                  Minha{" "}
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">
-                    Estante
-                  </span>
-                </h1>
-                <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[9px] font-bold text-zinc-400 uppercase tracking-widest">
-                  <Sparkles className="w-2.5 h-2.5 text-emerald-400" /> LEITURAS
-                </div>
-              </div>
-            </div>
-            <p className="text-zinc-400 text-xs md:text-sm font-medium max-w-xl">
-              Acompanhe seu progresso de leitura, anote páginas diárias e organize sua biblioteca pessoal.
-            </p>
-          </div>
-        </header>
-
-        <div className="relative">
-          <ReadingDashboard />
-        </div>
-      </div>
-    </main>
+    <PageShell maxWidth="7xl">
+      <PageHeader
+        eyebrow="Biblioteca"
+        accent="emerald"
+        icon={<BookOpen className="w-4 h-4" />}
+        title="Minha Estante"
+        subtitle="Acompanhe seu progresso de leitura, anote páginas diárias e organize sua biblioteca pessoal."
+      />
+      <ReadingDashboard />
+    </PageShell>
   );
 }

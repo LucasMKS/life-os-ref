@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 import { Clock, Loader2, TrendingDown, TrendingUp } from "lucide-react";
 import { gamingApi, statsApi } from "@/lib/api";
+import { SurfacePanel } from "@/components/ui/page-shell";
 
 const DAYS_WINDOW = 14;
 
@@ -16,15 +17,28 @@ const formatHours = (minutes: number) => {
   return `${h}h ${m}m`;
 };
 
-const CustomTooltip = ({ active, payload }: any) => {
+interface TooltipPayloadItem {
+  payload: {
+    fullDay: string;
+    minutes: number;
+  };
+}
+
+const CustomTooltip = ({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: TooltipPayloadItem[];
+}) => {
   if (active && payload && payload.length) {
     const point = payload[0].payload;
     return (
-      <div className="bg-[#09090b]/90 backdrop-blur-md border border-blue-500/30 p-3 rounded-xl shadow-xl">
-        <p className="text-zinc-400 text-[10px] uppercase tracking-wider mb-1 font-bold">
+      <div className="bg-[#161619] border border-white/[0.1] p-2.5 rounded-xl shadow-lg">
+        <p className="text-zinc-400 text-[10px] uppercase tracking-wider mb-1 font-semibold">
           {point.fullDay}
         </p>
-        <p className="text-blue-400 font-mono font-bold text-lg leading-none drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]">
+        <p className="text-zinc-100 font-mono font-bold text-base leading-none tabular-nums">
           {formatHours(point.minutes)}
         </p>
       </div>
@@ -48,9 +62,10 @@ export function SteamStatsChart() {
 
   const { dataset, totalMinutes, weekDelta } = useMemo(() => {
     const byDate = new Map<string, number>();
-    (playtimeStats ?? []).forEach((log: any) => {
-      const key = log.date;
-      byDate.set(key, (byDate.get(key) ?? 0) + (log.minutesPlayed ?? 0));
+    const logs = Array.isArray(playtimeStats) ? playtimeStats : [];
+    logs.forEach((log: { date?: string; minutesPlayed?: number }) => {
+      if (!log?.date) return;
+      byDate.set(log.date, (byDate.get(log.date) ?? 0) + (log.minutesPlayed ?? 0));
     });
 
     const today = new Date();
@@ -95,97 +110,79 @@ export function SteamStatsChart() {
   const isPositive = weekDelta >= 0;
 
   return (
-    <div className="bg-[#121214]/70 backdrop-blur-xl border border-white/5 border-t-blue-500/30 rounded-3xl p-6 lg:p-7 shadow-xl relative overflow-hidden flex flex-col min-h-[300px] group">
-      <div className="absolute -top-24 -right-24 w-64 h-64 bg-blue-500/5 blur-[80px] rounded-full pointer-events-none transition-opacity group-hover:opacity-100 opacity-40" />
-
-      <div className="flex items-start justify-between mb-6 relative z-10">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Clock className="text-blue-400 w-5 h-5" />
-            <h2 className="text-lg font-bold text-white tracking-tight">
-              Pulso de Jogo
-            </h2>
-          </div>
-          <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
-            Últimos {DAYS_WINDOW} dias
-          </p>
-        </div>
-
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex items-center gap-2">
-            <span className="font-mono font-bold text-2xl text-white leading-none">
-              {isLoading ? "-" : `${totalHours}h`}
-            </span>
-            {!isLoading && totalMinutes > 0 && (
-              <div
-                className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                  isPositive
-                    ? "bg-green-500/10 text-green-400"
-                    : "bg-red-500/10 text-red-400"
-                }`}
-              >
-                {isPositive ? (
-                  <TrendingUp className="w-3 h-3" />
-                ) : (
-                  <TrendingDown className="w-3 h-3" />
-                )}
-                {Math.abs(weekDelta)}%
-              </div>
-            )}
-          </div>
-          <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
-            Total Jogado
+    <SurfacePanel
+      title={`Pulso de Jogo · Últimos ${DAYS_WINDOW} dias`}
+      icon={<Clock className="w-3.5 h-3.5" />}
+      action={
+        <div className="flex items-center gap-2">
+          <span className="font-mono font-bold text-base sm:text-lg text-white tabular-nums leading-none">
+            {isLoading ? "—" : `${totalHours}h`}
           </span>
+          {!isLoading && totalMinutes > 0 && (
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                isPositive
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  : "bg-red-500/10 text-red-400 border-red-500/20"
+              }`}
+            >
+              {isPositive ? (
+                <TrendingUp className="w-3 h-3" />
+              ) : (
+                <TrendingDown className="w-3 h-3" />
+              )}
+              {Math.abs(weekDelta)}%
+            </span>
+          )}
         </div>
-      </div>
-
-      <div className="flex-grow w-full h-[220px] relative z-10 -ml-4 -mb-2">
+      }
+    >
+      <div className="w-full h-[210px]">
         {isLoading ? (
-          <div className="w-full h-full flex items-center justify-center">
-            <Loader2 className="w-6 h-6 animate-spin text-blue-500/50" />
+          <div className="w-full h-full flex items-center justify-center text-zinc-500">
+            <Loader2 className="w-5 h-5 animate-spin" />
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
               data={dataset}
-              margin={{ top: 10, right: 0, left: 0, bottom: 0 }}
+              margin={{ top: 10, right: 6, left: 6, bottom: 0 }}
             >
               <defs>
                 <linearGradient id="colorPlaytime" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#a1a1aa" stopOpacity={0.28} />
+                  <stop offset="95%" stopColor="#a1a1aa" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <Tooltip
                 content={<CustomTooltip />}
                 cursor={{
-                  stroke: "#3b82f6",
+                  stroke: "#52525b",
                   strokeWidth: 1,
                   strokeDasharray: "3 3",
-                  opacity: 0.5,
                 }}
               />
               <XAxis
                 dataKey="day"
                 axisLine={false}
                 tickLine={false}
-                tick={{ fill: "#52525b", fontSize: 10, fontWeight: 600 }}
-                dy={10}
+                tick={{ fill: "#71717a", fontSize: 10, fontWeight: 500 }}
+                dy={8}
                 interval="preserveStartEnd"
               />
               <Area
                 type="monotone"
                 dataKey="minutes"
-                stroke="#3b82f6"
-                strokeWidth={3}
+                stroke="#e4e4e7"
+                strokeWidth={2}
                 fillOpacity={1}
                 fill="url(#colorPlaytime)"
-                animationDuration={1500}
+                animationDuration={800}
               />
             </AreaChart>
           </ResponsiveContainer>
         )}
       </div>
-    </div>
+    </SurfacePanel>
   );
 }

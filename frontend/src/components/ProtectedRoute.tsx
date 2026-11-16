@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/lib/authStore";
 import { extractUserIdFromToken } from "@/lib/jwtUtils";
+import { isTokenExpired } from "@/lib/security";
 import Cookies from "js-cookie";
 import { Loader2 } from "lucide-react";
 
@@ -19,15 +20,21 @@ export default function ProtectedRoute({
 
   useEffect(() => {
     const cookieToken = Cookies.get("auth_token");
+    const activeToken = cookieToken || token;
+    const isPublicPath = pathname === "/login" || pathname === "/auth/callback";
 
     if (token && !cookieToken) {
       logout();
-      const isPublicPath = pathname === "/login" || pathname === "/auth/callback";
       if (!isPublicPath) router.replace("/login");
       return;
     }
 
-    const isPublicPath = pathname === "/login" || pathname === "/auth/callback";
+    if (activeToken && isTokenExpired(activeToken)) {
+      logout();
+      if (!isPublicPath) router.replace("/login");
+      setTimeout(() => setIsVerifying(false), 0);
+      return;
+    }
 
     if (!cookieToken && !isPublicPath) {
       router.replace("/login");
@@ -46,8 +53,8 @@ export default function ProtectedRoute({
 
   if (isVerifying && pathname !== "/login" && pathname !== "/auth/callback") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-950">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      <div className="min-h-screen flex items-center justify-center bg-[#09090b]">
+        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
       </div>
     );
   }

@@ -2,32 +2,50 @@
 
 import { useEffect, useState } from "react";
 import { BookOpen } from "lucide-react";
+import { sanitizeUrl } from "@/lib/security";
 
 type SmartBookCoverProps = {
-  url: string;
+  url?: string | null;
   title: string;
   className?: string;
 };
 
-export const SmartBookCover = ({ url, title, className }: SmartBookCoverProps) => {
-  const [src, setSrc] = useState(url);
+export const SmartBookCover = ({
+  url,
+  title,
+  className = "",
+}: SmartBookCoverProps) => {
+  const safeInitialUrl = sanitizeUrl(url);
+  const [src, setSrc] = useState<string | null>(safeInitialUrl);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    if (!url) return;
+    const validated = sanitizeUrl(url);
+    setError(false);
+
+    if (!validated) {
+      setSrc(null);
+      return;
+    }
+
     let isMounted = true;
 
-    if (!url.includes("google.com")) {
-      // eslint-disable-next-line
-      setSrc(url);
+    if (!validated.includes("google.com")) {
+      setSrc(validated);
       return;
     }
 
     const tryZoom = async (zoomLevel: number): Promise<boolean> => {
       return new Promise((resolve) => {
-        const testUrl = url.includes("zoom=")
-          ? url.replace(/zoom=\d/, `zoom=${zoomLevel}`)
-          : `${url}&zoom=${zoomLevel}`;
+        const candidate = validated.includes("zoom=")
+          ? validated.replace(/zoom=\d/, `zoom=${zoomLevel}`)
+          : `${validated}&zoom=${zoomLevel}`;
+
+        const safeCandidate = sanitizeUrl(candidate);
+        if (!safeCandidate) {
+          resolve(false);
+          return;
+        }
 
         const img = new window.Image();
         img.onload = () => {
@@ -40,12 +58,12 @@ export const SmartBookCover = ({ url, title, className }: SmartBookCoverProps) =
           if (isPlaceholder) {
             resolve(false);
           } else {
-            setSrc(testUrl);
+            setSrc(safeCandidate);
             resolve(true);
           }
         };
         img.onerror = () => resolve(false);
-        img.src = testUrl;
+        img.src = safeCandidate;
       });
     };
 
@@ -72,9 +90,9 @@ export const SmartBookCover = ({ url, title, className }: SmartBookCoverProps) =
   if (error || !src) {
     return (
       <div
-        className={`${className} aspect-[2/3] flex items-center justify-center bg-zinc-900 rounded-2xl border border-white/5`}
+        className={`${className} aspect-[2/3] flex items-center justify-center bg-zinc-900 border border-white/[0.06]`}
       >
-        <BookOpen className="w-8 h-8 text-zinc-800" />
+        <BookOpen className="w-7 h-7 text-zinc-700" />
       </div>
     );
   }
@@ -82,8 +100,9 @@ export const SmartBookCover = ({ url, title, className }: SmartBookCoverProps) =
   return (
     <img
       src={src}
-      alt={title}
+      alt={title || "Capa do livro"}
       loading="lazy"
+      decoding="async"
       className={className}
       onError={() => setError(true)}
     />

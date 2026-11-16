@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { SportMatch, MatchSummary } from "@/lib/types";
 import { sportsApi } from "@/lib/api";
+import { sanitizeUrl } from "@/lib/security";
 import {
   translateLeagueName,
   translateTeamName,
@@ -201,10 +202,12 @@ export function MatchDetailModal({
                 )}
               </div>
 
-              {match.homeTeam?.logoUrl ? (
+              {sanitizeUrl(match.homeTeam?.logoUrl) ? (
                 <img
-                  src={match.homeTeam.logoUrl}
+                  src={sanitizeUrl(match.homeTeam?.logoUrl)!}
                   alt={homeName}
+                  loading="lazy"
+                  decoding="async"
                   className="w-12 h-12 sm:w-14 sm:h-14 object-contain order-1 sm:order-2 shrink-0 drop-shadow-md"
                 />
               ) : (
@@ -257,10 +260,12 @@ export function MatchDetailModal({
 
             {/* Visitante */}
             <div className="col-span-5 flex flex-col sm:flex-row items-center sm:items-center justify-center sm:justify-start gap-2 sm:gap-3 text-center sm:text-left min-w-0">
-              {match.awayTeam?.logoUrl ? (
+              {sanitizeUrl(match.awayTeam?.logoUrl) ? (
                 <img
-                  src={match.awayTeam.logoUrl}
+                  src={sanitizeUrl(match.awayTeam?.logoUrl)!}
                   alt={awayName}
+                  loading="lazy"
+                  decoding="async"
                   className="w-12 h-12 sm:w-14 sm:h-14 object-contain shrink-0 drop-shadow-md"
                 />
               ) : (
@@ -493,10 +498,11 @@ export function MatchDetailModal({
                             {teamLeaders.leaders.map((cat) => {
                               const top = cat.leaders?.[0];
                               if (!top) return null;
-                              const headshotUrl =
+                              const rawHeadshotUrl =
                                 typeof top.athlete?.headshot === "string"
                                   ? top.athlete.headshot
                                   : (top.athlete?.headshot as any)?.href || undefined;
+                              const headshotUrl = sanitizeUrl(rawHeadshotUrl);
 
                               return (
                                 <div
@@ -508,6 +514,8 @@ export function MatchDetailModal({
                                       <img
                                         src={headshotUrl}
                                         alt=""
+                                        loading="lazy"
+                                        decoding="async"
                                         className="w-8 h-8 rounded-full object-cover bg-zinc-800 shrink-0"
                                       />
                                     ) : (
@@ -759,17 +767,21 @@ export function MatchDetailModal({
             Dados fornecidos em tempo real pela ESPN API
           </span>
 
-          {summary?.gamecastUrl && (
-            <a
-              href={summary.gamecastUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-zinc-200 hover:text-white transition-colors text-xs font-medium"
-            >
-              <span>Abrir no ESPN Gamecast</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          )}
+          {(() => {
+            const safeGamecastUrl = sanitizeUrl(summary?.gamecastUrl);
+            if (!safeGamecastUrl) return null;
+            return (
+              <a
+                href={safeGamecastUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-zinc-200 hover:text-white transition-colors text-xs font-medium"
+              >
+                <span>Abrir no ESPN Gamecast</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            );
+          })()}
         </div>
       </div>
     </div>

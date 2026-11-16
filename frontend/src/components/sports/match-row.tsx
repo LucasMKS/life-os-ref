@@ -7,6 +7,7 @@ import {
   translateTeamName,
 } from "@/lib/sports-translations";
 import { parseMatchDate } from "@/lib/date-utils";
+import { sanitizeUrl } from "@/lib/security";
 import {
   formatKickoff,
   isCanceledStatus,
@@ -27,10 +28,11 @@ export const TeamLogo = memo(function TeamLogo({
   size?: number;
 }) {
   const [failed, setFailed] = useState(false);
-  if (src && !failed) {
+  const safeSrc = sanitizeUrl(src);
+  if (safeSrc && !failed) {
     return (
       <img
-        src={src}
+        src={safeSrc}
         alt=""
         width={size}
         height={size}
