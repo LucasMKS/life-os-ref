@@ -1053,18 +1053,24 @@ public class ReleaseRadarService {
 
                         JsonNode seasonsNode = root.path("seasons");
                         List<Integer> seasonNumbers = new ArrayList<>();
+                        java.util.Map<Integer, Integer> seasonEpisodeCounts = new java.util.HashMap<>();
                         if (seasonsNode.isArray()) {
                             for (JsonNode sNode : seasonsNode) {
                                 int seasonNumber = sNode.path("season_number").asInt();
                                 if (seasonNumber > 0) { // Exclude specials
                                     seasonNumbers.add(seasonNumber);
+                                    int epCount = sNode.path("episode_count").asInt(0);
+                                    if (epCount > 0) {
+                                        seasonEpisodeCounts.put(seasonNumber, epCount);
+                                    }
                                 }
                             }
                         }
 
                         // Fetch episodes for all seasons in parallel
                         return Flux.fromIterable(seasonNumbers)
-                                .flatMap(seasonNum -> fetchSeasonEpisodesReactive(tmdbId, seasonNum))
+                                .flatMap(seasonNum -> fetchSeasonEpisodesReactive(
+                                        tmdbId, seasonNum, seasonEpisodeCounts.getOrDefault(seasonNum, 0)))
                                 .collectList()
                                 .map(allSeasonEpisodes -> {
                                     // Flatten the list of episodes
@@ -1186,13 +1192,23 @@ public class ReleaseRadarService {
     }
 
     private Mono<List<EpisodeDTO>> fetchSeasonEpisodesReactive(String tmdbId, int seasonNumber) {
-        String cacheKey = "gaming_radar_season_episodes:" + tmdbId + ":" + seasonNumber;
+        return fetchSeasonEpisodesReactive(tmdbId, seasonNumber, 0);
+    }
+
+    private Mono<List<EpisodeDTO>> fetchSeasonEpisodesReactive(String tmdbId, int seasonNumber, int expectedEpisodeCount) {
+        String cacheKey = "gaming_radar_season_episodes:v2:" + tmdbId + ":" + seasonNumber;
 
         Mono<List<EpisodeDTO>> cacheMono = Mono.fromCallable(() -> {
             try {
                 String json = redisTemplate.opsForValue().get(cacheKey);
                 if (json != null) {
-                    return objectMapper.readValue(json, new TypeReference<List<EpisodeDTO>>() {});
+                    List<EpisodeDTO> cached = objectMapper.readValue(json, new TypeReference<List<EpisodeDTO>>() {});
+                    if (expectedEpisodeCount > 0 && cached.size() < expectedEpisodeCount) {
+                        log.info("Cache desatualizado para série {} temp {} ({} < {} episódios). Buscando TMDB...",
+                                tmdbId, seasonNumber, cached.size(), expectedEpisodeCount);
+                        return null;
+                    }
+                    return cached;
                 }
             } catch (Exception e) {
                 log.error("Erro ao ler episódios da temporada do Redis", e);
@@ -1200,13 +1216,9 @@ public class ReleaseRadarService {
             return null;
         })
         .subscribeOn(Schedulers.boundedElastic())
-        .flatMap(cachedEpisodes -> {
-            // Se o callable retornar null, Mono.fromCallable completa vazio.
-            // Se houver valor no cache, passamos adiante.
-            return Mono.just(cachedEpisodes);
-        });
+        .flatMap(Mono::just);
 
-        // Se o cache estiver vazio (retornou null e completou vazio), busca do TMDB
+        // Se o cache estiver vazio ou desatualizado, busca do TMDB
         Mono<List<EpisodeDTO>> tmdbMono = tmdbWebClient.get()
                 .uri(uriBuilder -> uriBuilder.path("/tv/{id}/season/{seasonNumber}")
                         .queryParam("language", "pt-BR")
@@ -1215,16 +1227,16 @@ public class ReleaseRadarService {
                 .bodyToMono(String.class)
                 .flatMap(responseBody -> Mono.fromCallable(() -> {
                     List<EpisodeDTO> episodes = parseTmdbSeasonEpisodes(responseBody, seasonNumber);
-                    
-                    // Salva o resultado no Redis
+
+                    // Salva o resultado no Redis com TTL adequado (temporadas recentes/ativas: 3h; antigas: 30d)
                     try {
                         boolean isFinished = isSeasonFinished(episodes);
-                        Duration ttl = isFinished ? Duration.ofDays(30) : Duration.ofDays(1);
+                        Duration ttl = isFinished ? Duration.ofDays(30) : Duration.ofHours(3);
                         redisTemplate.opsForValue().set(cacheKey, objectMapper.writeValueAsString(episodes), ttl);
                     } catch (Exception e) {
                         log.error("Erro ao salvar episódios da temporada no Redis", e);
                     }
-                    
+
                     return episodes;
                 }).subscribeOn(Schedulers.boundedElastic()));
 
@@ -1269,8 +1281,11 @@ public class ReleaseRadarService {
     }
 
     private boolean isSeasonFinished(List<EpisodeDTO> episodes) {
-        if (episodes.isEmpty()) return true;
+        if (episodes.isEmpty()) return false;
         LocalDate today = LocalDate.now(SAO_PAULO_ZONE);
+        LocalDate recentThreshold = today.minusDays(45);
+        LocalDate latestAirDate = null;
+
         for (EpisodeDTO ep : episodes) {
             if (ep.airDate() == null || ep.airDate().isEmpty() || ep.airDate().equals("null")) {
                 return false;
@@ -1280,11 +1295,15 @@ public class ReleaseRadarService {
                 if (airDate.isAfter(today)) {
                     return false;
                 }
+                if (latestAirDate == null || airDate.isAfter(latestAirDate)) {
+                    latestAirDate = airDate;
+                }
             } catch (Exception e) {
                 return false;
             }
         }
-        return true;
+        // Temporada cujo último episódio foi há menos de 45 dias ainda pode receber novos episódios no TMDB
+        return latestAirDate != null && !latestAirDate.isAfter(recentThreshold);
     }
 
     @Transactional
