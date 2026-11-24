@@ -377,14 +377,29 @@ export function EpisodeWatchlist() {
     },
   });
 
+  const getLocalTodayStr = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
   const isShowUnreleased = (s: SerieWatchStatusDTO) => {
-    const todayStr = new Date().toISOString().split("T")[0];
+    // Se já há episódios lançados (airDate <= hoje em SP), a série já estreou,
+    // mesmo que o TMDB ainda não tenha atualizado o status de "In Production"/"Planned".
+    if ((s.totalAiredEpisodes ?? 0) > 0) {
+      return false;
+    }
+
+    const todayStr = getLocalTodayStr();
     const isFutureFirstAir = Boolean(s.firstAirDate && s.firstAirDate > todayStr);
     const inProd = s.status === "In Production" || s.status === "Planned";
     return (
       isFutureFirstAir ||
       inProd ||
-      (s.totalAiredEpisodes === 0 && (!s.firstAirDate || s.firstAirDate > todayStr))
+      !s.firstAirDate ||
+      s.firstAirDate > todayStr
     );
   };
 
@@ -407,7 +422,7 @@ export function EpisodeWatchlist() {
           : watchLaterShows;
 
   const sortShows = (showsList: SerieWatchStatusDTO[]) => {
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = getLocalTodayStr();
 
     return [...showsList].sort((a, b) => {
       const hasFutureA = Boolean(a.nextAirDate && a.nextAirDate >= todayStr);
@@ -549,7 +564,7 @@ export function EpisodeWatchlist() {
             const isUnreleased = isShowUnreleased(show);
             const showUrl = buildLmsMediaUrl("SERIES", show.tmdbId);
             const episodes = Array.isArray(show.episodes) ? show.episodes : [];
-            const todayStr = new Date().toISOString().split("T")[0];
+            const todayStr = getLocalTodayStr();
 
             const watchedCount = Math.max(
               0,
